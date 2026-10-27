@@ -1,5 +1,13 @@
 # Railgun Logistics 0.2.0
 
+## Reusable-pod development preview
+
+The separate [single-player reusable-pod prototype](sandbox/README.md) now includes a **Frutiger Aero delivery menu**, two persistent physical pods and matching Junior/standard/Sr. connector fitting. The source and 122 checks are in [`sandbox/`](sandbox/). See its build/setup instructions and verification limits before testing.
+
+This is a development source update. The **0.2.3 multiplayer download and Friends auto-update channel below are unchanged**; they do not contain the prototype menu. Minmus/interplanetary deliveries and a complete reusable-pod round trip are still unfinished.
+
+## Released multiplayer mod
+
 **Download [RailgunLogistics-0.2.3.zip](https://github.com/kgeg401/KSP-RailgunLogistics/releases/download/v0.2.3/RailgunLogistics-0.2.3.zip).** Close KSP and copy the included `RailgunLogistics` folder into `GameData`. Launch KSP normally; the mod checks GitHub for approved updates and applies them after KSP closes. No installer, extra launcher, new Luna client, or GitHub login. See [copy-and-play instructions](README-Updates.md). Gameplay and server protocol remain the tested 0.2.0/v2 build.
 
 Kerbin emergency supplies for KSP 1.12.5/build3190 and Luna Multiplayer0.29.2. Built for Kgeg4 with Codex; code and procedural visuals are AI-assisted original work. Requires the already-installed ModuleManager and Luna client. This package contains no KSP assets or game assemblies; its launcher references a stock model on your own install.

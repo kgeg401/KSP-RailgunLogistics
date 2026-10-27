@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased reusable-pod prototype — 2026-10-27
+
+- Added the separate single-player development source, build instructions and 122 checks under `sandbox/`.
+- Added the native Frutiger Aero delivery menu with destination/port selection, cargo controls, selectable pod cards, compact mode and clearer disabled states.
+- Added physical Junior/standard/Sr. docking hardware fitting with tested resizing and reload persistence.
+- Documented Kerbin-orbit-only dispatch, paused rail-only launch work, remaining round-trip validation and the absence of multiplayer support for this prototype.
+- Existing 0.2.3 release assets and Friends update channel are unchanged.
+
 ## 0.2.3 bundle (gameplay remains 0.2.0)
 
 - Normal GameData mod ZIP: copy the mod folder and play; no installer or launcher.

@@ -1,4 +1,4 @@
-﻿**/bin/
+**/bin/
 **/obj/
 release/
 update-release/
@@ -6,3 +6,7 @@ evidence/
 *.zip
 *.mp4
 *.user
+sandbox/evidence/
+sandbox/staged/
+**/*.sfs
+**/*.log

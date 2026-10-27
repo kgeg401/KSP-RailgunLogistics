@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup><Compile Include="..\FlightFleet.cs" Link="FlightFleet.cs"/><Compile Include="..\RailLaunch.cs" Link="RailLaunch.cs"/><Compile Include="..\DockingPortPolicy.cs" Link="DockingPortPolicy.cs"/><Compile Include="..\ReentryEnvelope.cs" Link="ReentryEnvelope.cs"/><Compile Include="FleetTests.cs"/></ItemGroup>
+</Project>

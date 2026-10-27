@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net472</TargetFramework><AssemblyName>RailgunSandbox</AssemblyName><Version>0.3.0</Version></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="Assembly-CSharp"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.InputLegacyModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AnimationModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.ImageConversionModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.ImageConversionModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MechJeb2"><HintPath>$(KspRoot)\GameData\MechJeb2\Plugins\MechJeb2.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(KspRoot)\GameData\000_Harmony\0Harmony.dll</HintPath><Private>false</Private></Reference>
+    <Compile Include="FlightFleet.cs"/><Compile Include="RailLaunch.cs"/><Compile Include="DockingHardware.cs"/><Compile Include="DockingPortPolicy.cs"/><Compile Include="RailgunDeliveryPort.cs"/><Compile Include="AeroMenu.cs"/><Compile Include="ReentryEnvelope.cs"/><Compile Include="RecoveryGuidance.cs"/><Compile Include="StockPods.cs"/><Compile Include="DepotModel.cs"/><Compile Include="SandboxFlight.cs"/><Compile Include="DepotInspection.cs"/>
+  </ItemGroup>
+</Project>
