@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net472</TargetFramework><OutputType>WinExe</OutputType><AssemblyName>ApplyUpdate</AssemblyName><Version>1.0.0</Version></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
+    <Reference Include="System.Xml.Linq"/><Reference Include="System.IO.Compression"/><Reference Include="System.IO.Compression.FileSystem"/>
+    <Compile Include="../Updater/UpdateCore.cs"/><Compile Include="../Updater/ApplyUpdate.cs"/>
+  </ItemGroup>
+</Project>

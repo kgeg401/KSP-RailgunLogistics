@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><OutputType>Exe</OutputType><NoWarn>$(NoWarn);SYSLIB0014</NoWarn></PropertyGroup>
+  <ItemGroup><Compile Include="../../src/Updater/UpdateCore.cs"/><Compile Include="UpdateTests.cs"/></ItemGroup>
+</Project>

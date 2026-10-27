@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<Options>
+  <ChargeSeconds>30</ChargeSeconds>
+  <KerbinTransitSeconds>120</KerbinTransitSeconds>
+  <OtherTransitSeconds>600</OtherTransitSeconds>
+  <MaxUnitsPerResource>1000000</MaxUnitsPerResource>
+  <AllowedResources>
+    <string>LiquidFuel</string><string>Oxidizer</string><string>MonoPropellant</string>
+    <string>XenonGas</string><string>LqdHydrogen</string><string>LqdMethane</string>
+    <string>ArgonGas</string><string>Lithium</string><string>ElectricCharge</string>
+  </AllowedResources>
+</Options>

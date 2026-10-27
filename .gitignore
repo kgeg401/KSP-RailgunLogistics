@@ -1,0 +1,8 @@
+﻿**/bin/
+**/obj/
+release/
+update-release/
+evidence/
+*.zip
+*.mp4
+*.user
