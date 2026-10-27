@@ -37,7 +37,7 @@ namespace RailgunLogistics.Updates
                 var release=Release.Read(manifest);
                 if(release.Matches(mod)) { File.WriteAllText(Path.Combine(state,"last-check.txt"),DateTime.UtcNow.ToString("o")+" Current: "+release.Version); return; }
                 Release.Download(release.Url,Path.Combine(job,"client.zip"),Release.MaxDownload);
-                release.ExtractVerified(Path.Combine(job,"client.zip"),Path.Combine(job,"preview"));
+                if(!string.Equals(Release.Hash(Path.Combine(job,"client.zip")),release.Sha256,StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Download checksum mismatch.");
                 // Execute the already-installed helper, never executable code straight from a download.
                 string helper=Path.Combine(job,"ApplyUpdate.exe");
                 File.Copy(Path.Combine(mod,"Updater/ApplyUpdate.exe"),helper);

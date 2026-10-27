@@ -15,7 +15,7 @@ static class UpdateTests
         string source=Path.GetFullPath(args[0]);
         string lab=Path.Combine(Path.GetTempPath(),"RailgunUpdaterTests-"+Guid.NewGuid().ToString("N")); Directory.CreateDirectory(lab);
         var release=Release.Read(Path.Combine(source,"friends.xml"));
-        string zip=Directory.GetFiles(source,"RailgunLogistics-Client-*.zip").Single();
+        string zip=Directory.GetFiles(source,"RailgunLogistics-Update-*.zip").Single();
         string good=Path.Combine(lab,"good"); release.ExtractVerified(zip,good);
         Assert(release.Matches(good),"valid payload extracts and matches all files");
         File.AppendAllText(Path.Combine(good,"Receiver.cfg"),"corrupt"); Assert(!release.Matches(good),"local changed file triggers repair");

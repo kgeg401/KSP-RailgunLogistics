@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+#if !KSP_UPDATER
 using System.IO.Compression;
+#endif
 using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Xml;
-using System.Xml.Linq;
 
 namespace RailgunLogistics.Updates
 {
@@ -30,18 +31,20 @@ namespace RailgunLogistics.Updates
         }
         public static Release Read(string path)
         {
-            XDocument doc;
-            using(var r=XmlReader.Create(path,new XmlReaderSettings { DtdProcessing=DtdProcessing.Prohibit, XmlResolver=null, MaxCharactersInDocument=65536 })) doc=XDocument.Load(r);
-            var root=doc.Root;
-            if(root==null || root.Name!="Release" || (string)root.Attribute("KspBuild")!="3190" || (string)root.Attribute("LunaVersion")!="0.29.2.0") throw new InvalidDataException("Unsupported release/game version.");
-            var release=new Release { Version=(string)root.Attribute("Version"), Url=(string)root.Attribute("PackageUrl"), Sha256=(string)root.Attribute("Sha256") };
+            var doc=new XmlDocument { XmlResolver=null };
+            using(var r=XmlReader.Create(path,new XmlReaderSettings { DtdProcessing=DtdProcessing.Prohibit, XmlResolver=null, MaxCharactersInDocument=65536 })) doc.Load(r);
+            var root=doc.DocumentElement;
+            if(root==null || root.Name!="Release" || root.GetAttribute("KspBuild")!="3190" || root.GetAttribute("LunaVersion")!="0.29.2.0") throw new InvalidDataException("Unsupported release/game version.");
+            var release=new Release { Version=root.GetAttribute("Version"), Url=root.GetAttribute("PackageUrl"), Sha256=root.GetAttribute("Sha256") };
             System.Version parsed;
             if(!System.Version.TryParse(release.Version,out parsed) || !Hex(release.Sha256)) throw new InvalidDataException("Invalid release identity.");
             Uri uri;
             if(!Uri.TryCreate(release.Url,UriKind.Absolute,out uri) || uri.Scheme!="https" || uri.Host!="github.com" || !uri.AbsolutePath.StartsWith("/"+Repository+"/releases/download/",StringComparison.Ordinal) || !uri.AbsolutePath.EndsWith(".zip") || uri.UserInfo!="" || !uri.IsDefaultPort || uri.Query!="" || uri.Fragment!="") throw new InvalidDataException("Package is not a release from the configured repository.");
-            foreach(var f in root.Elements("File"))
+            foreach(XmlNode child in root.ChildNodes)
             {
-                string name=(string)f.Attribute("Path"), hash=(string)f.Attribute("Sha256");
+                var f=child as XmlElement;
+                if(f==null || f.Name!="File") continue;
+                string name=f.GetAttribute("Path"), hash=f.GetAttribute("Sha256");
                 if(!SafePath(name) || !Hex(hash) || release.Files.ContainsKey(name)) throw new InvalidDataException("Invalid/duplicate package file.");
                 release.Files.Add(name,hash);
             }
@@ -51,6 +54,7 @@ namespace RailgunLogistics.Updates
             return release;
         }
         public bool Matches(string folder) => Files.All(f=>File.Exists(Path.Combine(folder,f.Key)) && string.Equals(Hash(Path.Combine(folder,f.Key)),f.Value,StringComparison.OrdinalIgnoreCase));
+#if !KSP_UPDATER
         public void ExtractVerified(string zipPath,string destination)
         {
             if(!string.Equals(Hash(zipPath),Sha256,StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Download checksum mismatch.");
@@ -70,6 +74,7 @@ namespace RailgunLogistics.Updates
             }
             if(seen.Count!=Files.Count) throw new InvalidDataException("Package is missing files.");
         }
+#endif
         public static void Download(string url,string destination,int limit)
         {
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;

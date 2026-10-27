@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.3 bundle (gameplay remains 0.2.0)
+
+- Normal GameData mod ZIP: copy the mod folder and play; no installer or launcher.
+- Bundled startup updater checks the Friends channel and applies verified updates after KSP closes.
+- Uses the XML library included with KSP; archive processing runs in the bundled Windows helper, not KSP's limited Mono runtime.
+- Supersedes the 0.2.1 setup release, whose startup parser required an unavailable runtime library. 0.2.2 was an unpublished intermediate build.
+
 ## 0.2.1 bundle (gameplay remains 0.2.0)
 
 - Separate Windows updater checks the pinned Friends GitHub channel at KSP's main menu.

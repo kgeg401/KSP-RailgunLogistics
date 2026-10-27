@@ -1,5 +1,5 @@
 param(
-    [string]$BundleVersion='0.2.1',
+    [string]$BundleVersion='0.2.3',
     [Parameter(Mandatory=$true)][string]$ServerPath,
     [switch]$Publish
 )
@@ -16,12 +16,12 @@ $running=Get-CimInstance Win32_Process -Filter "Name='Server.exe'" | Where-Objec
 if(!$running) { throw 'Start and verify the server with its matching plugin before promoting the Friends channel.' }
 $latestChange=@(Get-Item -LiteralPath (Join-Path $ServerPath 'Plugins\RailgunLogistics.Server.dll'),(Join-Path $ServerPath 'Config\LMPModControl.xml')) | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if($running.CreationDate -lt $latestChange.LastWriteTime) { throw 'Server files changed after its current process started. Restart/verify it before release promotion.' }
-$clientZip=Join-Path $build "RailgunLogistics-Client-$BundleVersion.zip"
+$clientZip=Join-Path $build "RailgunLogistics-Update-$BundleVersion.zip"
 if((Get-FileHash -LiteralPath $clientZip -Algorithm SHA256).Hash -ne $release.Release.Sha256) { throw 'Release ZIP no longer matches its descriptor.' }
 Write-Output "Ready: $repo v$BundleVersion. Server accepts client SHA $clientHash."
 if(!$Publish) { Write-Output 'Preview only. Pass -Publish after approving public release publication.'; return }
 # GitHub connector has no release-asset upload endpoint; CLI is used for those operations.
-$assets=@($clientZip,(Join-Path $build "RailgunLogistics-$BundleVersion-Setup.zip"),(Join-Path $PSScriptRoot 'RailgunLogistics-0.2.0.zip'))
+$assets=@($clientZip,(Join-Path $build "RailgunLogistics-$BundleVersion.zip"))
 $releaseList=& gh release list --repo $repo --limit 100 --json tagName
 if($LASTEXITCODE -ne 0) { throw 'Could not inspect existing releases.' }
 $releaseItems=$releaseList | ConvertFrom-Json

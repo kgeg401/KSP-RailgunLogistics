@@ -1,4 +1,4 @@
-param([string]$BundleVersion='0.2.1')
+param([string]$BundleVersion='0.2.3')
 $ErrorActionPreference='Stop'
 $project=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $build=Join-Path $project "update-release\$BundleVersion"
@@ -17,7 +17,7 @@ $settingsHash=(Get-FileHash -LiteralPath (Join-Path $mod 'Settings.xml')).Hash
 $helper=Join-Path $build 'package\GameData\RailgunLogistics\Updater\ApplyUpdate.exe'
 $job=Join-Path $lab 'job-good'; New-Item -ItemType Directory -Path $job | Out-Null
 Copy-Item -LiteralPath (Join-Path $build 'friends.xml') -Destination (Join-Path $job 'release.xml')
-Copy-Item -LiteralPath (Join-Path $build "RailgunLogistics-Client-$BundleVersion.zip") -Destination (Join-Path $job 'client.zip')
+Copy-Item -LiteralPath (Join-Path $build "RailgunLogistics-Update-$BundleVersion.zip") -Destination (Join-Path $job 'client.zip')
 $fake=Start-Process -FilePath (Join-Path $game 'KSP_x64.exe') -ArgumentList '/c ping.exe -n 5 127.0.0.1 >nul' -WindowStyle Hidden -PassThru
 $apply=Start-Process -FilePath $helper -ArgumentList @(('"'+$game+'"'),('"'+$job+'"')) -WindowStyle Hidden -PassThru
 Start-Sleep -Seconds 1
@@ -37,12 +37,5 @@ Set-Content -LiteralPath (Join-Path $jobBad 'client.zip') -Value 'broken'
 $bad=Start-Process -FilePath $helper -ArgumentList @(('"'+$game+'"'),('"'+$jobBad+'"')) -WindowStyle Hidden -PassThru -Wait
 if($bad.ExitCode -ne 1) { throw 'Corrupt package was not rejected.' }
 if((Get-FileHash -LiteralPath (Join-Path $mod 'Plugins\RailgunLogistics.dll')).Hash -ne $before) { throw 'Corrupt update changed installed DLL.' }
-# Exercise the friend-facing first-install script against the fixture as well.
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $build 'package\Install-Client.ps1') -KspPath $game
-# The minimal fixture has no ModuleManager: refusal is expected and must leave the current mod intact.
-if($LASTEXITCODE -eq 0) { throw 'Installer accepted missing dependency.' }
-Set-Content -LiteralPath (Join-Path $game 'GameData\ModuleManager.fixture.dll') -Value 'fixture dependency marker'
-& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $build 'package\Install-Client.ps1') -KspPath $game
-if($LASTEXITCODE -ne 0) { throw 'First-install script failed.' }
-if((Get-FileHash -LiteralPath (Join-Path $mod 'Settings.xml')).Hash -ne $settingsHash) { throw 'Installer changed local settings bytes.' }
-Write-Output "PASS: waits for exact game, applies on exit, verifies bytes, preserves settings/extras/save sentinel, backs up, rejects corrupt download and missing dependency. Evidence: $lab"
+if(Test-Path -LiteralPath (Join-Path $build 'package\Install-Client.ps1')) { throw 'An installer was included in the drop-in package.' }
+Write-Output "PASS: waits for exact game, applies on exit, verifies bytes, preserves settings/extras/save sentinel, backs up, rejects corrupt download; drop-in package contains no installer. Evidence: $lab"

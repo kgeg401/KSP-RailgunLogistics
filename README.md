@@ -1,7 +1,6 @@
-**Download for Windows:** [Railgun Logistics setup](https://github.com/kgeg401/KSP-RailgunLogistics/releases/download/v0.2.1/RailgunLogistics-0.2.1-Setup.zip). Extract it, close KSP, and run `Install-Client.ps1 -KspPath '<your KSP folder>'`. Install once on each PC; future approved updates download when KSP reaches the main menu and install after it closes. See [startup update instructions](README-Updates.md).
 # Railgun Logistics 0.2.0
 
-**Windows startup-update bundle 0.2.1:** see [README-Updates.md](README-Updates.md). It adds the GitHub updater while keeping the tested gameplay DLL and server protocol unchanged.
+**Download [RailgunLogistics-0.2.3.zip](https://github.com/kgeg401/KSP-RailgunLogistics/releases/download/v0.2.3/RailgunLogistics-0.2.3.zip).** Close KSP and copy the included `RailgunLogistics` folder into `GameData`. Launch KSP normally; the mod checks GitHub for approved updates and applies them after KSP closes. No installer, extra launcher, new Luna client, or GitHub login. See [copy-and-play instructions](README-Updates.md). Gameplay and server protocol remain the tested 0.2.0/v2 build.
 
 Kerbin emergency supplies for KSP 1.12.5/build3190 and Luna Multiplayer0.29.2. Built for Kgeg4 with Codex; code and procedural visuals are AI-assisted original work. Requires the already-installed ModuleManager and Luna client. This package contains no KSP assets or game assemblies; its launcher references a stock model on your own install.
 
@@ -21,7 +20,7 @@ Supported by default: LiquidFuel, Oxidizer, MonoPropellant, XenonGas, LqdHydroge
 
 ## Installation
 
-Close KSP. Copy **GameData/RailgunLogistics** into the KSP folder, merging GameData. Do this on **every player's PC**. It is a small custom-mod package, not the third-party mod pack.
+Download the playable mod ZIP from Releases. Close KSP. Copy its **GameData/RailgunLogistics** into the KSP folder, merging GameData. Do this on **every player's PC**. No installer is required. It is a small custom-mod package, not the third-party mod pack. The GitHub source ZIP does not contain the compiled mod.
 
 For the host, close the Luna server cleanly first, then copy **Server/Plugins/RailgunLogistics.Server.dll** into its Plugins folder. Run the included installer to also allow the new part and require matching client DLLs in mod control:
 
@@ -29,7 +28,7 @@ For the host, close the Luna server cleanly first, then copy **Server/Plugins/Ra
 .\Install.ps1 -KspPath 'D:\Games\Kerbal Space Program' -ServerPath 'D:\Servers\LunaMultiplayer'
 ```
 
-Your brother should supply only his KSP path, omitting ServerPath. The installer backs up replaced mod files and mod-control settings, rejects the wrong game build and refuses to install while that game/server is running. It preserves unrelated mods. It does not download the game, install Luna, start processes or change the server password, name or mode. Back up saves/Universe separately before first use.
+Players only copy the mod folder; the script above is for initial server administration. Keep the existing KSP/Luna client. The updater backs up its own replaced files and preserves settings, saves, and unrelated mods. It does not download the game, install Luna, or change the server password, name, or mode. Back up saves/Universe separately before first use.
 
 Single-player settings: `GameData/RailgunLogistics/Settings.xml`. Single-player order ledger: `saves/<save>/RailgunLogistics.xml`. Luna settings/ledger: `Universe/RailgunLogistics/Settings.xml` and `Orders.xml`, created on first server start. Change server settings while stopped. Ledger files have an atomic `.previous` revision; **do not delete/reset orders to fix an error**, as that discards delivery history. Keep these files with the corresponding save/universe backup.
 

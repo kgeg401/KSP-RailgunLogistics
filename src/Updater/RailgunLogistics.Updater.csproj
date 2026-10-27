@@ -1,8 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net472</TargetFramework><AssemblyName>RailgunLogistics.Updater</AssemblyName><Version>1.0.0</Version></PropertyGroup>
+  <PropertyGroup><TargetFramework>net472</TargetFramework><AssemblyName>RailgunLogistics.Updater</AssemblyName><Version>1.0.2</Version><DefineConstants>$(DefineConstants);KSP_UPDATER</DefineConstants></PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
-    <Reference Include="System.Xml.Linq"/><Reference Include="System.IO.Compression"/><Reference Include="System.IO.Compression.FileSystem"/>
     <Reference Include="Assembly-CSharp"><HintPath>$(KspRoot)/KSP_x64_Data/Managed/Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine"><HintPath>$(KspRoot)/KSP_x64_Data/Managed/UnityEngine.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.CoreModule"><HintPath>$(KspRoot)/KSP_x64_Data/Managed/UnityEngine.CoreModule.dll</HintPath><Private>false</Private></Reference>
