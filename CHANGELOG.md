@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.3 development — not released
+
+- Replace the experimental pad controller's fixed 2 m/s descent below 300 m with a bounded descent rate based on clearance and time needed for horizontal correction. The last 30 m retains the slow contact approach.
+- A replay from the failed uninterrupted 0.3.2 return's unchanged 944 m native checkpoint landed 0.720 m from the pad and passed the five-second stability gate with all original parts/cargo intact. A complete new return on this policy is still required; production channels stay on 0.3.2.
+- Add two near-pad/far-miss policy checks; fleet checks now total 159. Missing touchdown evidence is reported as a failed acceptance rather than preventing the remaining read-only audit checks.
+
 ## 0.3.2 multiplayer alpha
 
 - Advisory delivery ETA range in reusable pod cards and flight details, based on native encounter/docking guidance and KSP universal time. Invalidated estimates cannot complete cargo transfer.

@@ -215,5 +215,9 @@ Check(padApproach.Active && padApproach.MaximumDescentSpeed > 2 && padApproach.M
 Check(TerminalPadGuidance.Compute(4000, 0, 100, 0, 4000, -250, 9.81, 40).Active, "Early pad approach can brake a fast descent when measured thrust and clearance provide a stopping margin");
 Check(!TerminalPadGuidance.Compute(4000, 0, 100, 0, 1000, -250, 9.81, 30).Active, "An inadequate vertical stopping margin leaves emergency braking in native control");
 var padAligned = TerminalPadGuidance.Compute(1, 1, 0, 0, 10, -1, 9.81, 30);
+var padNear = TerminalPadGuidance.Compute(31, 0, .7, 0, 240, -2, 9.81, 60);
+Check(padNear.Active && padNear.SlowDescent && padNear.MaximumDescentSpeed > 8 && padNear.MaximumDescentSpeed <= 12, "Near-pad correction does not spend two minutes hovering 240 metres above touchdown");
+var padFarLow = TerminalPadGuidance.Compute(1000, 0, 20, 0, 240, -2, 9.81, 60);
+Check(padFarLow.MaximumDescentSpeed < padNear.MaximumDescentSpeed, "A large low-altitude miss keeps more time for lateral correction");
 Check(padAligned.Active && !padAligned.SlowDescent, "An aligned settled approach retains native descent timing");
 Console.WriteLine($"PASS {checks} fleet, docking evidence, landing, cargo, launch and persistence checks. Native flight not established by these checks.");

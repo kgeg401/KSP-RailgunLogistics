@@ -32,7 +32,8 @@ def audit(directory):
             checks["nativeLanded"] = fields(vessel).get("sit") == "LANDED" and fields(vessel).get("landed") == "True"
             cargo = [fields(r) for p in parts if fields(p).get("name") == "krlReusableMonoCargo" for r in nodes("RESOURCE", p) if fields(r).get("name") == "MonoPropellant"]
             checks["lockedCargoPreserved"] = len(cargo) == 1 and float(cargo[0]["amount"]) == float(pod.findtext("CargoUnits")) > 0 and cargo[0]["flowState"].lower() == "false"
-        rows = list(csv.DictReader((directory / "LandingEvidence.tsv").open(), delimiter="\t"))
+        acceptance_file = directory / "LandingEvidence.tsv"
+        rows = list(csv.DictReader(acceptance_file.open(), delimiter="\t")) if acceptance_file.exists() else []
         accepted = [r for r in rows if r["runId"] == report["runId"] and r["pod"] == pod.findtext("VesselId") and r["accepted"] == "True"]
         checks["oneMatchingAcceptance"] = len(accepted) == 1
         if len(accepted) == 1:

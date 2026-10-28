@@ -4,6 +4,8 @@
 
 The ETA becomes available when native guidance has a usable encounter or docking approach. It uses game time and reports calculating when there is no reliable plan. Experimental rail-only launches and precision landing work are documented in [the October 28 checkpoint](docs/Launch-Landing-Checkpoint.md); they remain disabled in ordinary and Luna dispatches.
 
+The development source is now 0.3.3 and contains a further experimental terminal-descent fuel policy. It is not a published client update; the installed host and updater channel remain on 0.3.2.
+
 Two native clients have shared a flight through rail launch, powered ascent and stable orbit. The complete multiplayer docking, delivery and return cycle remains unverified. Only Kerbin-orbit receivers, the same Luna subspace and 1x time are supported in this alpha. The earlier [0.2.3 assisted-docking download](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.2.3) remains available; the sections below describe that older service retained for compatibility.
 
 Kerbin emergency supplies for KSP 1.12.5/build3190 and Luna Multiplayer0.29.2. Built for Kgeg4 with Codex; code and procedural visuals are AI-assisted original work. Requires the already-installed ModuleManager and Luna client. This package contains no KSP assets or game assemblies; its launcher references a stock model on your own install.

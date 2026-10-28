@@ -39,7 +39,8 @@ namespace RailgunSandbox
             return new PadCommand {
                 Active = true, AccelerationX = ax, AccelerationZ = az,
                 SlowDescent = distance > 5 || speed > .5,
-                MaximumDescentSpeed = clearance > 300 ? Math.Max(3, Math.Min(40, clearance / (distance / speedLimit + speed / Math.Max(.1, limit) + 15))) : clearance > 30 ? 2 : .6
+                MaximumDescentSpeed = clearance > 300 ? Math.Max(3, Math.Min(40, clearance / (distance / speedLimit + speed / Math.Max(.1, limit) + 15))) :
+                    clearance > 30 ? Math.Max(2, Math.Min(12, clearance / (distance / speedLimit + speed / Math.Max(.1, limit) + 12))) : .6
             };
         }
     }
