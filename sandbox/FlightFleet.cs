@@ -55,6 +55,8 @@ namespace RailgunSandbox
     public static class FlightRules
     {
         public static bool Finite(double n) => !double.IsNaN(n) && !double.IsInfinity(n);
+        public static bool SafeOrbit(double periapsis, double eccentricity, double atmosphere) => Finite(periapsis) && Finite(eccentricity) &&
+            Finite(atmosphere) && atmosphere >= 0 && eccentricity >= 0 && eccentricity < 1 && periapsis > atmosphere + 3000;
         public static bool Busy(PodRecord p) => p.Phase != FlightPhase.Ready && p.Phase != FlightPhase.Lost && p.Phase != FlightPhase.Stranded && p.Phase != FlightPhase.RecoveryTestComplete;
         public static bool RequiresMainPropellant(FlightPhase phase) => phase == FlightPhase.Ascent || phase == FlightPhase.Rendezvous || phase == FlightPhase.Landing;
         // Native Mainsail starved with .0136 LF/.0163 Ox still reported in its tanks.

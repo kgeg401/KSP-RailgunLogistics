@@ -25,7 +25,7 @@ $serverRoot=(Resolve-Path -LiteralPath $ServerPath).Path
 $running=Get-CimInstance Win32_Process -Filter "Name='Server.exe'" | Where-Object ExecutablePath -eq (Join-Path $serverRoot 'Server.exe')
 if(!$running) { throw 'Start and verify the matching host before promotion.' }
 $plugin=Join-Path $serverRoot 'Plugins\RailgunLogistics.Server.dll'
-if([Reflection.AssemblyName]::GetAssemblyName($plugin).Version.ToString() -ne '0.3.0.0') { throw 'Expected the shared-fleet server plugin.' }
+if([Reflection.AssemblyName]::GetAssemblyName($plugin).Version.ToString(3) -ne $BundleVersion) { throw 'Expected the matching shared-fleet server plugin.' }
 $changed=@(Get-Item -LiteralPath $plugin,(Join-Path $serverRoot 'Config\LMPModControl.xml')) | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if($running.CreationDate -lt $changed.LastWriteTime) { throw 'The host must restart after its plugin and mod-control update.' }
 foreach($folder in @($build,$bootstrap)) {

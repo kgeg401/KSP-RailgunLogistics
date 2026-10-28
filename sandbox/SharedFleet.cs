@@ -37,6 +37,7 @@ namespace RailgunSandbox
     public sealed class SharedFleet
     {
         public int Version = 1, Subspace = int.MinValue;
+        public double GameTime;
         public string Epoch = Guid.NewGuid().ToString("N");
         public List<FleetSlot> Slots = new List<FleetSlot>();
         public static SharedFleet New() => new SharedFleet { Slots = FleetState.New().Pods.Select(p => new FleetSlot { Pod = p }).ToList() };
@@ -52,7 +53,7 @@ namespace RailgunSandbox
         }
         public void Validate()
         {
-            if (Version != 1 || !Guid.TryParseExact(Epoch, "N", out _) || Slots == null || Slots.Count != 2 ||
+            if (Version != 1 || !FlightRules.Finite(GameTime) || GameTime < 0 || !Guid.TryParseExact(Epoch, "N", out _) || Slots == null || Slots.Count != 2 ||
                 Slots.Any(s => s == null || s.Revision < 0 || s.LeaseUntil < 0 || s.Pilot == null || s.Pilot.Length > 80 ||
                     (s.Lease != "" && !Guid.TryParseExact(s.Lease, "N", out _)))) throw new InvalidDataException("Invalid shared fleet authority.");
             new FleetState { Pods = Slots.Select(s => s.Pod).ToList() }.Validate();
@@ -73,6 +74,8 @@ namespace RailgunSandbox
         public int Subspace = int.MinValue;
         public bool ReceiverOwned, ReceiverReady, PodSnapshotVerified, PodOnPad, Docked, ReceiptDurable, LandedAtDepot, PodMissingConfirmed;
         public bool OwnsPodUpdate, PlacementSettled;
+        public bool AbandonedTimeline, ForwardTimeline, OtherFlightPilotsAligned;
+        public double GameTime;
     }
     public static class FleetWire
     {
@@ -137,11 +140,25 @@ namespace RailgunSandbox
                 return Snapshot();
             }
             if (request.Revision != slot.Revision) throw new InvalidOperationException("Fleet changed; refresh before retrying.");
-            if (facts.Subspace < 0 || (next.Subspace != int.MinValue && facts.Subspace != next.Subspace))
+            bool resynchronize = request.Kind == "Resynchronize";
+            if (resynchronize) {
+                if (facts.Subspace < 0 || facts.Subspace == next.Subspace || !facts.AbandonedTimeline || !facts.ForwardTimeline || !facts.OtherFlightPilotsAligned ||
+                    !FlightRules.Finite(facts.GameTime) || facts.GameTime < Math.Max(next.GameTime, next.Slots.Max(s => s.Pod.PhaseStarted)))
+                    throw new InvalidOperationException("Return to 1x and synchronize the delivery pilots to the same Luna time before resuming.");
+                if (!slot.Pod.Created || !facts.PodSnapshotVerified || !facts.OwnsPodUpdate || (slot.LeaseUntil > now && slot.Pilot != player))
+                    throw new InvalidOperationException("Timeline recovery requires ownership of the original intact pod.");
+                // Only move the ledger's coordination group. Native vessels,
+                // manifests, receipts and flight clocks are never rewound.
+                next.RestartSession();
+                foreach (var entry in next.Slots) entry.Revision++;
+                slot.Pilot = player; slot.Lease = Guid.NewGuid().ToString("N");
+            }
+            else if (facts.Subspace < 0 || (next.Subspace != int.MinValue && facts.Subspace != next.Subspace))
                 throw new InvalidOperationException("Synchronize to the depot's Luna time before controlling a pod.");
             var old = slot.Pod;
             bool held = slot.Pilot == player && slot.Lease == request.Lease && slot.Lease != "" && slot.LeaseUntil > now;
-            if (request.Kind == "Acquire") {
+            if (resynchronize) { }
+            else if (request.Kind == "Acquire") {
                 bool dockHandoff = (old.Phase == FlightPhase.Docking || old.Phase == FlightPhase.Unloading) && facts.Docked && facts.OwnsPodUpdate;
                 if (slot.LeaseUntil > now && slot.Pilot != player && !dockHandoff) throw new InvalidOperationException("Another player controls this pod.");
                 if (old.Created && !facts.OwnsPodUpdate) throw new InvalidOperationException("Acquire this vessel's Luna update lock first.");
@@ -178,6 +195,7 @@ namespace RailgunSandbox
                 if (old.Phase != FlightPhase.Lost) { FlightRules.Advance(old, FlightPhase.Lost, old.PhaseStarted); old.Detail = "Native server confirmed the pod or original structural parts are missing."; }
             } else throw new InvalidOperationException("Unknown fleet operation.");
             next.Subspace = facts.Subspace;
+            if (FlightRules.Finite(facts.GameTime) && facts.GameTime >= 0) next.GameTime = Math.Max(next.GameTime, facts.GameTime);
             slot.LeaseUntil = checked(now + 20); slot.Revision++;
             slot.LastRequest = request.Request; slot.LastDigest = digest; slot.LastPlayer = player;
             bool returned = request.Kind == "Commit" && old.Phase == FlightPhase.Refitting && slot.Pod.Phase == FlightPhase.Ready;

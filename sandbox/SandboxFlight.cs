@@ -249,7 +249,11 @@ namespace RailgunSandbox
                     }
                     armed.Remove(pod.VesselId);
                 }
-                if (!network.Ready) { detail = network.Error; return; }
+                if (!network.Ready) {
+                    detail = network.Status;
+                    if (Time.realtimeSinceStartup >= nextStatus) { nextStatus = Time.realtimeSinceStartup + 2; try { Status(); } catch (Exception ex) { Fail(ex); } }
+                    return;
+                }
             }
             if (!state.Pods.Any(FlightRules.Busy) && FlightGlobals.ActiveVessel?.mainBody == home) ResolveGround();
             model?.Place(home, state.HomeLatitude, state.HomeLongitude, ground);
@@ -563,6 +567,14 @@ namespace RailgunSandbox
         }
         void PoweredAscent(PodRecord p, Vessel v, RailgunFlightPod marker, Vessel target, MechJebCore core)
         {
+            var ap = core.GetComputerModule<MechJebModuleAscentAutopilot>();
+            // Guidance can lose its Luna lease after warp or reconnect even
+            // though the native circularization already succeeded. Resume from
+            // the actual orbit, rather than starting a second ascent program.
+            if (!ap.enabled && FlightRules.SafeOrbit(v.orbit.PeA, v.orbit.eccentricity, home.atmosphereDepth)) {
+                core.node.Abort(); core.thrust.ThrustOff();
+                Change(p, FlightPhase.Rendezvous); PersistGame(); return;
+            }
             if (Once(p)) {
                 v.SetReferenceTransform(marker.part);
                 foreach (var engine in v.parts.SelectMany(part => part.FindModulesImplementing<ModuleEngines>())) engine.Activate();
@@ -575,7 +587,7 @@ namespace RailgunSandbox
                 path.turnEndAltitude.val = 40000; path.turnEndAngle.val = 0; path.turnShapeExponent.val = .4;
                 ascent.doWiring(); ascent.users.Add(this);
             }
-            var ap = core.GetComputerModule<MechJebModuleAscentAutopilot>(); p.Detail = "Native powered ascent: " + ap.status;
+            p.Detail = "Native powered ascent: " + ap.status;
             if (v.orbit.PeA > home.atmosphereDepth + 3000 && !ap.enabled) Change(p, FlightPhase.Rendezvous);
         }
         void CoastAndCircularize(PodRecord p, Vessel v, MechJebCore core)
@@ -874,7 +886,7 @@ namespace RailgunSandbox
         {
             var lines = new StringBuilder(network == null ? "Local reusable fleet / native 1x flight\n" : "Luna shared reusable fleet / native 1x flight\n");
             lines.AppendLine("UT=" + Now.ToString("R", CultureInfo.InvariantCulture)); lines.AppendLine("Error=" + error);
-            if (network != null) lines.AppendLine("SharedAuthority: ready=" + network.Ready + " player=" + network.Player + " error=" + network.Error);
+            if (network != null) lines.AppendLine("SharedAuthority: ready=" + network.Ready + " player=" + network.Player + " status=" + network.Status);
             lines.AppendLine($"NativeChecks: warp={TimeWarp.CurrentRate:R} fixedDt={TimeWarp.fixedDeltaTime:R} infinitePropellant={CheatOptions.InfinitePropellant} infiniteElectricity={CheatOptions.InfiniteElectricity} ignoreTemperature={CheatOptions.IgnoreMaxTemperature} unbreakableJoints={CheatOptions.UnbreakableJoints} noCrashDamage={CheatOptions.NoCrashDamage}");
             lines.AppendLine("Active=" + FlightGlobals.ActiveVessel?.vesselName);
             lines.AppendLine($"Menu: collapsed={menuCollapsed} selectedPod={selectedPod} resource={resource} quantity={quantity} compact={compactMenuPreview}");
@@ -1076,7 +1088,7 @@ namespace RailgunSandbox
             bool amountValid = double.TryParse(quantity, NumberStyles.Float, CultureInfo.InvariantCulture, out double units) && FlightRules.Finite(units) && units > 0 && units <= limit;
             bool setup = state.Pods.Any(p => !p.Created);
             string hint = faulted ? "Storage needs attention before a delivery can start." : !string.IsNullOrEmpty(error) ? error :
-                network != null && !network.Ready ? "Waiting for shared server authority." :
+                network != null && !network.Ready ? network.Status :
                 network != null && !string.IsNullOrEmpty(network.Error) ? network.Error : setup ? "Set up the depot to prepare your two reusable pods." :
                 selected.Phase != FlightPhase.Ready ? "Pod " + selected.Number + " is " + FriendlyPhase(selected).ToLowerInvariant() + ". Choose a ready pod." :
                 !routeSupported ? "Choose a destination in stable Kerbin orbit." : chosen == null ? "View the destination and select a free docking port." :

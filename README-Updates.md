@@ -1,20 +1,24 @@
 # Railgun Logistics client updates
 
-The reusable-pod client is the **0.3.0 multiplayer alpha**. It combines the physical-flight prototype with the existing mod and its updater. The older 0.2.3 assisted-docking download remains available separately. Check the release page and the pinned Friends channel for what has actually been published; a source commit or draft does not update a player.
+The reusable-pod client is the **0.3.1 multiplayer alpha**. It combines the physical-flight prototype with the existing mod and its updater. The older 0.2.3 assisted-docking download remains available separately. Check the release page and the pinned Friends channel for what has actually been published; a source commit or draft does not update a player.
 
 ## Requirements and first installation
 
 Use Windows, KSP 1.12.5 build 3190, Luna Multiplayer 0.29.2, ModuleManager, MechJeb 2.14.3 and Harmony 2.2.1 from the shared server's mod pack. This small download contains our mod, not the game or third-party mod pack.
 
-Close KSP, extract the ordinary **RailgunLogistics-0.3.0.zip**, and copy its **GameData/RailgunLogistics** folder into your game's GameData folder. Back up an existing copy first and preserve your Settings.xml. Copy the entire folder, including Parts and Updater. Keep your existing Luna client, saves and other mods. An older separate development addon at GameData/RailgunSandbox must be backed up outside GameData before installing the integrated client, or duplicate game modules would load.
+Close KSP, extract the ordinary **RailgunLogistics-0.3.1.zip**, and copy its **GameData/RailgunLogistics** folder into your game's GameData folder. Back up an existing copy first and preserve your Settings.xml. Copy the entire folder, including Parts and Updater. Keep your existing Luna client, saves and other mods. An older separate development addon at GameData/RailgunSandbox must be backed up outside GameData before installing the integrated client, or duplicate game modules would load.
 
-Players do not run an installer, a command, or ApplyUpdate.exe. GitHub's **Code / Download ZIP** contains source rather than the playable mod. The ZIP named **RailgunLogistics-Update-0.3.0.zip** is the updater's internal payload, not the first-install download.
+Players do not run an installer, a command, or ApplyUpdate.exe. GitHub's **Code / Download ZIP** contains source rather than the playable mod. The ZIP named **RailgunLogistics-Update-0.3.1.zip** is the updater's internal payload, not the first-install download.
 
-## Updating an existing 0.2.3 client
+## Updating an existing client
+
+Existing **0.3.0** clients receive 0.3.1 in one normal update cycle: start KSP, follow the downloaded-update notice, quit normally, then reopen. The patch fixes recovery after Luna timeline changes, preserves the original flight and keeps guided deliveries at 1x.
+
+### From 0.2.3
 
 Start KSP normally. The older updater reads **channel/friends.xml**, which installs the **0.2.5 updater bridge** while retaining the classic gameplay DLL. Follow its notice: quit normally, wait for the background helper, then start KSP again.
 
-The newer updater reads **channel/reusable.xml**. It checks the required mod versions and downloads the integrated 0.3.0 client. Follow that second notice and quit/reopen once more. This one-time migration takes two update cycles; later compatible updates use the ordinary single cycle. The Luna host requires the matching gameplay DLL, so finish the client update before joining.
+The newer updater reads **channel/reusable.xml**. It checks the required mod versions and downloads the integrated 0.3.1 client. Follow that second notice and quit/reopen once more. This one-time migration takes two update cycles; later compatible updates use the ordinary single cycle. The Luna host requires the matching gameplay DLL, so finish the client update before joining.
 
 Missing or incompatible dependencies leave the installed client unchanged and produce a message. Install the shared server's required mod pack, then start KSP again. Updates download at the main menu and apply only after that game instance closes. The helper preserves settings and extra files, keeps backups outside GameData, verifies every archive entry and file hash, and does not stop KSP, replace Luna, alter saves or update the server.
 

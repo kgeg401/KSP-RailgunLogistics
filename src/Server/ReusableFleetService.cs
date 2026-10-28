@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using LmpCommon.Message.Data;
 using LmpCommon.Message.Server;
+using LmpCommon.Time;
 using RailgunLogistics;
 using RailgunSandbox;
 using Server.Client;
@@ -50,6 +51,17 @@ namespace RailgunLogisticsServer
             var expected = FleetWire.NativeRecord(slot, request);
             var facts = new FleetFacts { Subspace = client.Subspace };
             if (expected == null) return facts;
+            if (WarpContext.Subspaces.TryGetValue(client.Subspace, out var current)) {
+                double gameTime = (LunaNetworkTime.UtcNow - TimeContext.StartTime).TotalSeconds + current.Time;
+                facts.GameTime = gameTime;
+                facts.AbandonedTimeline = !ClientRetriever.GetAuthenticatedClients().Any(c => c.Subspace == state.Subspace);
+                // Subspace offsets can differ slightly due to normal clock
+                // correction. The monotonic boundary is the last committed
+                // flight time, not equality or ordering of those offsets.
+                facts.ForwardTimeline = FlightRules.Finite(gameTime);
+                facts.OtherFlightPilotsAligned = state.Slots.Where(s => FlightRules.Busy(s.Pod) && s.Pilot != "" && s.Pilot != client.PlayerName && s.LeaseUntil > now)
+                    .All(s => ClientRetriever.GetClientByName(s.Pilot)?.Subspace == client.Subspace);
+            }
             var podId = PodVessel(expected.VesselId);
             if (podId != Guid.Empty && VesselStoreSystem.CurrentVessels.TryGetValue(podId, out var native)) {
                 var parts = native.Parts.GetAllValues().ToList();

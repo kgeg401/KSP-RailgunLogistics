@@ -32,7 +32,7 @@ if ($ReusableFleet) {
     if (!$GameplayClientDll) { throw 'A current integrated gameplay DLL is required for a reusable-fleet release.' }
     Copy-Item -LiteralPath (Join-Path $root 'sandbox\GameData\RailgunSandbox\ReusableParts.cfg') -Destination (Join-Path $client 'Parts\ReusableParts.cfg')
     $serverSource=Join-Path $root 'src\Server\bin\Release\net6.0\RailgunLogistics.Server.dll'
-    if ([Reflection.AssemblyName]::GetAssemblyName($serverSource).Version.ToString() -ne '0.3.0.0') { throw 'Build the matching shared-fleet server first.' }
+    if ([Reflection.AssemblyName]::GetAssemblyName($serverSource).Version.ToString(3) -ne $BundleVersion) { throw 'Build the matching shared-fleet server first.' }
     $serverTarget=Join-Path $bundle 'Server\Plugins'; New-Item -ItemType Directory -Path $serverTarget -Force | Out-Null
     Copy-Item -LiteralPath $serverSource -Destination $serverTarget
     Copy-Item -LiteralPath (Join-Path $root 'Install.ps1') -Destination $bundle

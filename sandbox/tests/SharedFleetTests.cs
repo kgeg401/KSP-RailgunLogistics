@@ -8,6 +8,9 @@ void Check(bool condition, string label) { if (!condition) throw new Exception(l
 void Reject(Action action, string label) { bool rejected = false; try { action(); } catch (InvalidOperationException) { rejected = true; } Check(rejected, label); }
 Check(Math.Abs(FleetClock.Estimate(1793148673, 100.25f, 100f) - 1793148673.25) < .000001, "Epoch-sized lease clock preserves subsecond precision instead of rounding by 128 seconds");
 Check(FleetClock.Estimate(1793148673, 99f, 100f) == 1793148673, "A scene clock regression cannot move server time backwards");
+Check(FlightRules.SafeOrbit(98798.28, .0156973, 70000), "The reported live orbit is safe even if the ascent ledger is stale");
+Check(!FlightRules.SafeOrbit(-167353.29, .2, 70000), "A coast trajectory with an underground periapsis is not accepted as orbit");
+Check(!FlightRules.SafeOrbit(double.NaN, .1, 70000) && !FlightRules.SafeOrbit(99000, 1, 70000), "Invalid or escaping trajectories cannot skip circularization");
 var fleet = SharedFleet.New();
 foreach (var slot in fleet.Slots) { slot.Pod.Created = true; slot.Pod.PartIds.AddRange(new uint[] { (uint)(slot.Pod.Number * 10 + 1), (uint)(slot.Pod.Number * 10 + 2) }); slot.Pod.OwnPort = slot.Pod.PartIds[0]; slot.Pod.OriginalParts = 2; }
 SharedFleet disk = null;
@@ -34,6 +37,35 @@ var a = Reserve(1); facts.ReceiverOwned = false;
 Reject(() => authority.Apply("Alice", a, facts, 1000), "Unowned receiving ship cannot reserve a pod");
 Check(authority.State.Slots[0].Revision == 0 && disk == null, "Rejected request changes neither authority nor disk");
 facts.ReceiverOwned = true; var reserved = authority.Apply("Alice", a, facts, 1000);
+var drift = FleetWire.Copy(reserved); drift.Subspace = 1472;
+var driftFacts = new FleetFacts { Subspace = 1473, PodSnapshotVerified = true, OwnsPodUpdate = true, ForwardTimeline = true, OtherFlightPilotsAligned = true, GameTime = 2000 };
+SharedFleet driftDisk = null;
+var driftAuthority = new FleetAuthority(drift, value => driftDisk = value);
+var rejoin = new FleetMessage { Kind = "Resynchronize", Epoch = drift.Epoch, Number = 1, Revision = drift.Slots[0].Revision, Request = Guid.NewGuid().ToString("N") };
+Reject(() => driftAuthority.Apply("Alice", rejoin, driftFacts, 1030), "Timeline recovery cannot abandon another player in the old time group");
+driftFacts.AbandonedTimeline = true; driftFacts.ForwardTimeline = false;
+Reject(() => driftAuthority.Apply("Alice", rejoin, driftFacts, 1030), "Timeline recovery cannot rewind the flight clock");
+driftFacts.ForwardTimeline = true; driftFacts.OtherFlightPilotsAligned = false;
+Reject(() => driftAuthority.Apply("Alice", rejoin, driftFacts, 1030), "A different active pilot's timeline cannot be silently changed");
+driftFacts.OtherFlightPilotsAligned = true; driftFacts.OwnsPodUpdate = false;
+Reject(() => driftAuthority.Apply("Alice", rejoin, driftFacts, 1030), "Timeline recovery cannot bypass native vessel ownership");
+driftFacts.OwnsPodUpdate = true; driftFacts.PodSnapshotVerified = false;
+Reject(() => driftAuthority.Apply("Alice", rejoin, driftFacts, 1030), "Timeline recovery requires the original intact pod");
+driftFacts.PodSnapshotVerified = true;
+driftFacts.GameTime = 999;
+Reject(() => driftAuthority.Apply("Alice", rejoin, driftFacts, 1030), "A new subspace cannot go behind the committed flight time even if its identifier is newer");
+driftFacts.GameTime = 2000;
+var rejoined = driftAuthority.Apply("Alice", rejoin, driftFacts, 1030);
+Check(rejoined.Subspace == 1473 && rejoined.Epoch != drift.Epoch && rejoined.Slots[0].Pilot == "Alice" && driftDisk!.Epoch == rejoined.Epoch,
+    "The reported abandoned-1472/new-1473 failure resumes with durable new control authority");
+Check(FleetWire.Digest(rejoined.Slots[0].Pod) == FleetWire.Digest(drift.Slots[0].Pod), "Resynchronization does not respawn, refuel, teleport or reset mission progress");
+Check(rejoined.GameTime == 2000, "Recovery establishes a durable monotonic flight-time checkpoint");
+var nearby = new FleetMessage { Kind = "Resynchronize", Epoch = rejoined.Epoch, Number = 1, Revision = rejoined.Slots[0].Revision, Request = Guid.NewGuid().ToString("N") };
+driftFacts.Subspace = 1474; driftFacts.GameTime = 1999.75;
+Reject(() => driftAuthority.Apply("Alice", nearby, driftFacts, 1031), "A quarter-second actual rewind is rejected");
+driftFacts.GameTime = 2000.25;
+Check(driftAuthority.Apply("Alice", nearby, driftFacts, 1031).Subspace == 1474, "A new group with forward flight progress can recover despite its independent clock offset");
+Reject(() => driftAuthority.Apply("Alice", rejoin, driftFacts, 1031), "A pre-recovery packet cannot mutate the new timeline session");
 Check(reserved.Slots[0].Pilot == "Alice" && reserved.Slots[0].Lease.Length == 32 && disk!.Slots[0].Pod.Phase == FlightPhase.Reserved, "Server commits ownership and reservation before acknowledgement");
 var renewed = FleetWire.Copy(reserved); renewed.Slots[0].Revision++; renewed.Slots[0].LeaseUntil++;
 Check(FleetReconcile.KeepLocal(reserved, renewed, renewed.Slots[0], "Alice"), "A lease-only acknowledgement preserves the pilot's continuous physics timers");

@@ -1,6 +1,6 @@
 # Railgun Logistics
 
-**Download the [0.3.0 reusable-pod multiplayer alpha](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.3.0).** It combines the physical launch prototype, matching docking hardware, the Frutiger Aero menu and a server-owned two-pod fleet. See [installation and automatic updates](README-Updates.md) for requirements and the one-time migration from 0.2.3. Players keep their existing KSP and Luna client.
+**Download the [0.3.1 reusable-pod multiplayer alpha](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.3.1).** It combines the physical launch prototype, matching docking hardware, the Frutiger Aero menu and a server-owned two-pod fleet. See [installation and automatic updates](README-Updates.md) for requirements and the one-time migration from 0.2.3. Players keep their existing KSP and Luna client.
 
 Two native clients have shared a flight through rail launch, powered ascent and stable orbit. The complete multiplayer docking, delivery and return cycle remains unverified. Only Kerbin-orbit receivers, the same Luna subspace and 1x time are supported in this alpha. The earlier [0.2.3 assisted-docking download](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.2.3) remains available; the sections below describe that older service retained for compatibility.
 

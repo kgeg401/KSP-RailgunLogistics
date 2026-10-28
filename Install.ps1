@@ -60,7 +60,8 @@ if ($ServerPath) {
     if (!$entry) { $entry=$control.CreateElement('DllFile'); $mandatory.AppendChild($entry) | Out-Null }
     $hash = (Get-FileHash -LiteralPath (Join-Path $clientTarget 'Plugins\RailgunLogistics.dll') -Algorithm SHA256).Hash
     $dashedHash = ($hash -split '(.{2})' | Where-Object { $_ }) -join '-'
-    $description=if($reusable){'Railgun Logistics 0.3.0 shared reusable pods - finish the matching client update before joining.'}else{'Railgun Logistics physical docking pods - install the same client package before joining.'}
+    $gameplayVersion=[Reflection.AssemblyName]::GetAssemblyName((Join-Path $clientTarget 'Plugins\RailgunLogistics.dll')).Version.ToString(3)
+    $description=if($reusable){"Railgun Logistics $gameplayVersion shared reusable pods - finish the matching client update before joining."}else{'Railgun Logistics physical docking pods - install the same client package before joining.'}
     foreach ($pair in @{FilePath=$relativeDll;Text=$description;Sha=$dashedHash;Link=''}.GetEnumerator()) {
         $field = $entry.SelectSingleNode($pair.Key)
         if (!$field) { $field = $control.CreateElement($pair.Key); $entry.AppendChild($field) | Out-Null }

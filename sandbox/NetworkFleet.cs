@@ -21,7 +21,10 @@ namespace RailgunSandbox
     {
         FleetState view;
         void Awake() { DontDestroyOnLoad(gameObject); }
-        void Update() { if (NetworkFleet.IsMultiplayer || NetworkFleet.Connected) NetworkFleet.Shared.Pump(ref view); }
+        void Update() {
+            if (NetworkFleet.IsMultiplayer || NetworkFleet.Connected) NetworkFleet.Shared.Pump(ref view);
+            NetworkFleet.Shared.GuardFlightTime();
+        }
         void OnApplicationQuit() { NetworkFleet.Shared.Dispose(); }
     }
     public sealed class NetworkFleet : IDisposable
@@ -38,14 +41,27 @@ namespace RailgunSandbox
         static readonly HashSet<int> requestedControl = new HashSet<int>();
         SharedFleet authority;
         bool subscribed;
-        float lastSnapshot = -100, nextPoll, snapshotAt;
+        float lastSnapshot = -100, nextPoll, snapshotAt, nextResync;
         long serverTime;
         public string Error { get; private set; } = "";
         public static bool IsMultiplayer => HighLogic.SaveFolder == "LunaMultiplayer";
         public static bool Connected => MainSystem.NetworkState == ClientState.Running;
         public string Player => SettingsSystem.CurrentSettings.PlayerName;
-        public bool Ready => Connected && authority != null && Time.realtimeSinceStartup - lastSnapshot < 4 &&
+        public bool HasSnapshot => Connected && authority != null && Time.realtimeSinceStartup - lastSnapshot < 4;
+        public bool Ready => HasSnapshot &&
             WarpSystem.Singleton.CurrentSubspace >= 0 && (authority.Subspace == int.MinValue || WarpSystem.Singleton.CurrentSubspace == authority.Subspace);
+        public string Status => !HasSnapshot ? "Waiting for the shared depot connection." : WarpSystem.Singleton.CurrentSubspace < 0 ?
+            "Guidance paused during time warp. Return to 1x to resume." : !Ready ?
+            "Guidance paused after a Luna time change; recovering shared flight synchronization. " + Error : Error;
+        const string TimeLock = "RailgunReusable.GuidedFlightTime";
+        public void GuardFlightTime()
+        {
+            bool guided = HasSnapshot && authority.Slots.Any(s => s.Pilot == Player && s.LeaseUntil > Now && FlightRules.Busy(s.Pod));
+            if (guided) {
+                InputLockManager.SetControlLock(ControlTypes.TIMEWARP, TimeLock);
+                if (TimeWarp.CurrentRate != 1) TimeWarp.SetRate(0, true);
+            } else InputLockManager.RemoveControlLock(TimeLock);
+        }
         double Now => FleetClock.Estimate(serverTime, Time.realtimeSinceStartup, snapshotAt);
         FleetSlot Slot(int number) => authority?.Slots.SingleOrDefault(s => s.Pod.Number == number);
         public string Pilot(int number) => Slot(number)?.Pilot ?? "";
@@ -135,8 +151,6 @@ namespace RailgunSandbox
                 }
                 authority = message.Fleet; serverTime = message.ServerNow; snapshotAt = lastSnapshot = Time.realtimeSinceStartup;
                 if (message.Kind == "Error") Error = message.Error; else Error = "";
-                if (WarpSystem.Singleton.CurrentSubspace >= 0 && authority.Subspace != int.MinValue && WarpSystem.Singleton.CurrentSubspace != authority.Subspace)
-                    Error = "Synchronize to the depot's Luna time before controlling a pod.";
                 if (local == null) local = new FleetState { Pods = authority.Slots.Select(s => FleetWire.Copy(s.Pod)).ToList() };
                 else foreach (var slot in authority.Slots) {
                     if (pending.ContainsKey(slot.Pod.Number)) continue;
@@ -148,11 +162,28 @@ namespace RailgunSandbox
             }
             if (Time.realtimeSinceStartup < nextPoll) return; nextPoll = Time.realtimeSinceStartup + 1;
             Send(new FleetMessage { Kind = "List" });
+            if (HasSnapshot && WarpSystem.Singleton.CurrentSubspace >= 0 && authority.Subspace != int.MinValue && WarpSystem.Singleton.CurrentSubspace != authority.Subspace) {
+                foreach (var item in pending.Where(p => p.Value.Message.Kind != "Resynchronize").ToArray()) {
+                    pending.Remove(item.Key);
+                    if (local != null) local.Pods[local.Pods.FindIndex(p => p.Number == item.Key)] = FleetWire.Copy(Slot(item.Key).Pod);
+                }
+            }
             if (local != null && Ready && pending.Values.Any(p => p.Message.Kind == "Commit")) PublishNative(local);
             foreach (var queued in pending.Values) if (Time.realtimeSinceStartup - queued.Sent >= 1) {
                 queued.Sent = Time.realtimeSinceStartup; Send(queued.Message);
             }
-            if (local == null || !Ready) return;
+            if (local == null || !HasSnapshot) return;
+            if (!Ready) {
+                if (WarpSystem.Singleton.CurrentSubspace >= 0 && Time.realtimeSinceStartup >= nextResync) {
+                    nextResync = Time.realtimeSinceStartup + 5;
+                    var candidate = local.Pods.FirstOrDefault(p => p.Created && p.Phase != FlightPhase.Lost &&
+                        (Pilot(p.Number) == Player || Dispatcher(p.Number) == Player || FlightGlobals.ActiveVessel == StockPods.Vessel(p)) && NativeOwner(p));
+                    if (candidate != null && !pending.ContainsKey(candidate.Number)) Queue(Slot(candidate.Number), "Resynchronize", null);
+                }
+                return;
+            }
+            foreach (var pod in local.Pods.Where(p => FlightRules.Busy(p) && Dispatcher(p.Number) == Player && NativeOwner(p, false)))
+                if (!LeaseValid(pod.Number) && CanTakeControl(pod.Number)) requestedControl.Add(pod.Number);
             // Luna assigns background orbit updates independently of gameplay
             // control. Cooperatively release only OUR background locks when the
             // server grants a pod to another pilot. Never displace a control lock.
@@ -217,6 +248,7 @@ namespace RailgunSandbox
         {
             if (subscribed && ModApiEvent.onModMessageReceived != null) ModApiEvent.onModMessageReceived.Remove(Receive);
             pending.Clear(); authority = null;
+            InputLockManager.RemoveControlLock(TimeLock);
         }
     }
 }
