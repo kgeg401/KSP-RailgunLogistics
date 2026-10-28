@@ -1,7 +1,7 @@
-param([string]$BundleVersion='0.2.3', [string]$GameplayClientDll='', [switch]$ReusableFleet)
+param([string]$BundleVersion='0.2.3', [string]$GameplayClientDll='', [switch]$ReusableFleet, [string]$SharedUpdaterPath='')
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot
-foreach($project in @('src\Updater\RailgunLogistics.Updater.csproj','src\UpdateHelper\ApplyUpdate.csproj')) {
+foreach($project in @('src\Updater\RailgunLogistics.Updater.csproj','src\UpdateHelper\ApplyUpdate.csproj') | Where-Object { !$SharedUpdaterPath }) {
     & dotnet build (Join-Path $root $project) -c Release --nologo
     if($LASTEXITCODE -ne 0) { throw "Failed: $project" }
 }
@@ -39,8 +39,15 @@ if ($ReusableFleet) {
 }
 $updater=Join-Path $client 'Updater'
 New-Item -ItemType Directory -Path $updater -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $root 'src\Updater\bin\Release\net472\RailgunLogistics.Updater.dll') -Destination $updater
-Copy-Item -LiteralPath (Join-Path $root 'src\UpdateHelper\bin\Release\net472\ApplyUpdate.exe') -Destination $updater
+$updaterDll=Join-Path $root 'src\Updater\bin\Release\net472\RailgunLogistics.Updater.dll'
+$helperExe=Join-Path $root 'src\UpdateHelper\bin\Release\net472\ApplyUpdate.exe'
+if ($SharedUpdaterPath) {
+    $shared=(Resolve-Path -LiteralPath $SharedUpdaterPath).Path
+    $updaterDll=Join-Path $shared 'RailgunLogistics.Updater.dll'; $helperExe=Join-Path $shared 'ApplyUpdate.exe'
+    if ([Reflection.AssemblyName]::GetAssemblyName($updaterDll).Name -ne 'RailgunLogistics.Updater' -or [Reflection.AssemblyName]::GetAssemblyName($helperExe).Name -ne 'ApplyUpdate') { throw 'Expected the common built updater/helper pair.' }
+}
+Copy-Item -LiteralPath $updaterDll -Destination $updater
+Copy-Item -LiteralPath $helperExe -Destination $updater
 $clientZip=Join-Path $out "RailgunLogistics-Update-$BundleVersion.zip"
 $archive=[IO.Compression.ZipFile]::Open($clientZip,[IO.Compression.ZipArchiveMode]::Create)
 try {
