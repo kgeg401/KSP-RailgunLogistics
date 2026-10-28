@@ -6,13 +6,16 @@ namespace RailgunSandbox
     // native maneuver; there is no in-flight launch force or velocity assignment.
     public static class RailLaunch
     {
-        public const double Length = 40000;
-        public const double ElevationDegrees = 35;
-        public const double MuzzleSpeed = 2400;
+        // Longer, lower-acceleration guide avoids the failed 40 km candidate's
+        // exposed-part hypersonic heating while still releasing below orbit.
+        // Experimental geometry: native thermal/flight acceptance is required.
+        public const double Length = 100000;
+        public const double ElevationDegrees = 30;
+        public const double MuzzleSpeed = 2200;
         public const double MaximumCircularizationDeltaV = 800;
 
         public static bool OnGuide(double along, double lateral) =>
-            FlightRules.Finite(along) && FlightRules.Finite(lateral) && along >= -2 && along < Length && lateral <= 3;
+            FlightRules.Finite(along) && FlightRules.Finite(lateral) && along >= -2 && along < Length && lateral >= 0 && lateral <= 3;
 
         public static double DriveAcceleration(double speed, double dt, double gravityAlong)
         {

@@ -56,6 +56,9 @@ namespace RailgunSandbox
         Vector2 scroll;
         readonly Dictionary<string, string> armed = new Dictionary<string, string>();
         readonly HashSet<string> guidedByUs = new HashSet<string>();
+        readonly Dictionary<int, DeliveryEstimate> deliveryEstimates = new Dictionary<int, DeliveryEstimate>();
+        readonly Dictionary<int, string> deliveryEstimateKeys = new Dictionary<int, string>();
+        double nextEtaSample;
         MonoBehaviour legacyService;
         bool legacyWasEnabled;
         bool showcase;
@@ -223,6 +226,7 @@ namespace RailgunSandbox
         }
         void Watch(PodRecord p)
         {
+            selectedPod = p.Number;
             var v = StockPods.Vessel(p) ?? throw new InvalidOperationException("The saved physical pod is missing. No replacement was generated.");
             network?.RequestControl(p);
             follow = true;
@@ -264,7 +268,7 @@ namespace RailgunSandbox
                 nextStatus = Time.realtimeSinceStartup + 2;
                 try { Command(); if (!enabledHere) return; Status(); } catch (Exception ex) { Fail(ex); }
             }
-            if (Time.realtimeSinceStartup < nextTick || !FlightGlobals.ready) return;
+            if (Time.realtimeSinceStartup < nextTick || !FlightGlobals.ready || FlightDriver.Pause) return;
             nextTick = Time.realtimeSinceStartup + .25;
             try {
                 if (network != null && network.SetupRequested) {
@@ -370,6 +374,11 @@ namespace RailgunSandbox
                 if (!FlightRules.HasMainPropellant(propellant.Where(r => r.resourceName == "LiquidFuel").Sum(r => r.amount),
                     propellant.Where(r => r.resourceName == "Oxidizer").Sum(r => r.amount))) {
                     StopFlight(core); v.ctrlState.mainThrottle = 0;
+                    if (p.Phase == FlightPhase.Landing && FlightRules.CanSettleWithoutFuel(v.mainBody == home, v.Splashed,
+                        Math.Min(core.vesselState.altitudeTrue, core.vesselState.altitudeBottom), PadDistance(p, v), v.srfSpeed, UprightAngle(v))) {
+                        p.Detail = "Fuel exhausted at home pad; waiting for actual touchdown and stability";
+                        return; // No landing/refit credit until native contact and the full stability interval.
+                    }
                     p.Detail = "Propulsion exhausted; pod unavailable. Delivery cargo remains isolated.";
                     Change(p, FlightPhase.Stranded); PersistGame(); return;
                 }
@@ -407,8 +416,10 @@ namespace RailgunSandbox
                     RailFrame(p, out var railOrigin, out var railAxis, out var railUp);
                     double alongRail = Vector3d.Dot(v.GetWorldPos3D() - railOrigin, railAxis);
                     p.Detail = p.RailOnlyAscent ? "Electromagnetic rail acceleration; pod engines and RCS OFF" : "Rail launch assist; powered ascent follows muzzle release";
-                    if (alongRail >= (p.RailOnlyAscent ? RailLaunch.Length : 108) || p.RailOnlyAscent && Vector3d.Dot(v.srf_velocity, railAxis) >= RailLaunch.MuzzleSpeed - 1) {
+                    if (alongRail >= (p.RailOnlyAscent ? RailLaunch.Length : 108)) {
                         ShutdownLaunchPropulsion(v, core); Change(p, FlightPhase.Ascent); PersistGame();
+                    } else if (p.RailOnlyAscent && !RailLaunch.OnGuide(alongRail, (v.GetWorldPos3D() - railOrigin - railAxis * alongRail).magnitude)) {
+                        LaunchFailure(p, core, "Pod departed the physical launch guide before the muzzle");
                     }
                     break;
                 case FlightPhase.Ascent:
@@ -460,16 +471,18 @@ namespace RailgunSandbox
                         Change(p, FlightPhase.Stranded); PersistGame(); break;
                     }
                     if (Once(p)) {
+                        p.StableSince = -1; // A fresh scene/control handoff must establish a new continuous touchdown interval.
                         Pad(p, out double lat, out double lon); v.SetReferenceTransform(marker.part);
                         ApplyLandingEngineCompatibility(p, v);
                         if (v.altitude - ground > 1500) RetractLegs(p, v);
-                        RecoveryGuidance.Register(core, home, this, lat, lon);
+                        RecoveryGuidance.Register(core, home, this, lat, lon, ReentryTestSave && Environment.GetCommandLineArgs().Contains("-railgun-pad-guidance"));
                         foreach (var engine in v.parts.Where(part => p.PartIds.Contains(part.flightID)).SelectMany(part => part.FindModulesImplementing<ModuleEngines>())) engine.Activate();
                         core.target.SetPositionTarget(home, lat, lon); core.landing.deployChutes = false;
                         core.landing.deployGears = true; core.landing.limitGearsStage.val = -1; core.landing.touchdownSpeed.val = .4;
                         core.landing.LandAtPositionTarget(this);
                     }
-                    p.Detail = "Powered return to home pad: " + core.landing.status;
+                    string terminalStatus = RecoveryGuidance.TerminalStatus(core.landing);
+                    p.Detail = terminalStatus.StartsWith("centering /", StringComparison.Ordinal) ? "Home-pad approach: " + terminalStatus : "Powered return to home pad: " + core.landing.status;
                     if (FlightRules.StableLanding(p, FlightRules.LandingEvidence(v.Landed, v.mainBody == home, 0, v.srfSpeed,
                         v.parts.Count(part => p.PartIds.Contains(part.flightID)), p.OriginalParts), Now)) {
                         int intact = v.parts.Count(part => p.PartIds.Contains(part.flightID));
@@ -592,7 +605,20 @@ namespace RailgunSandbox
         }
         void CoastAndCircularize(PodRecord p, Vessel v, MechJebCore core)
         {
-            if (Once(p) && p.CircularizationStarted && !core.node.enabled && v.patchedConicSolver != null &&
+            bool entering = Once(p);
+            if (!core.node.enabled && FlightRules.SafeOrbit(v.orbit.PeA, v.orbit.eccentricity, home.atmosphereDepth)) {
+                core.thrust.ThrustOff(); Change(p, FlightPhase.Rendezvous); PersistGame(); return;
+            }
+            if (v.patchedConicSolver == null) { p.Detail = "Waiting for the native orbital plan"; return; }
+            if (p.CircularizationPlanned && !p.CircularizationStarted && v.patchedConicSolver.maneuverNodes.Count == 0) {
+                // A scene reload can retain the ledger but lose an unexecuted node.
+                // Re-plan from the real current orbit; never insert a velocity.
+                p.CircularizationPlanned = false; SaveLedger();
+            }
+            if (p.CircularizationStarted && !core.node.enabled && v.patchedConicSolver.maneuverNodes.Count == 0) {
+                LaunchFailure(p, core, "Circularization stopped without a maneuver or a safe orbit"); return;
+            }
+            if (entering && p.CircularizationStarted && !core.node.enabled &&
                 v.patchedConicSolver.maneuverNodes.Count == 1 && v.altitude > home.atmosphereDepth + 1000) {
                 foreach (var engine in v.parts.SelectMany(part => part.FindModulesImplementing<ModuleEngines>())) engine.Activate();
                 core.node.ExecuteOneNode(this);
@@ -609,7 +635,7 @@ namespace RailgunSandbox
                     return;
                 }
                 double burnAt = Now + v.orbit.timeToAp;
-                if (v.orbit.timeToAp <= 0 || v.orbit.ApA < home.atmosphereDepth + 5000) { LaunchFailure(p, core, "Insufficient rail apoapsis"); return; }
+                if (v.verticalSpeed < 0 || v.orbit.timeToAp <= 0 || v.orbit.ApA < home.atmosphereDepth + 5000) { LaunchFailure(p, core, "Insufficient or missed rail apoapsis"); return; }
                 Vector3d dv = OrbitalManeuverCalculator.DeltaVToCircularize(v.orbit, burnAt);
                 if (!FlightRules.Finite(dv.magnitude) || dv.magnitude > RailLaunch.MaximumCircularizationDeltaV) {
                     LaunchFailure(p, core, "Required circularization exceeds the 800 m/s launch budget: " + dv.magnitude.ToString("F1")); return;
@@ -624,27 +650,32 @@ namespace RailgunSandbox
                 p.CircularizationHalfBurnTime = dv.magnitude * v.GetTotalMass() / thrust / 2;
                 p.CircularizationPlanned = true; SaveLedger();
             }
-            if (!p.CircularizationStarted && RailLaunch.BurnWindow(v.altitude, home.atmosphereDepth, v.orbit.timeToAp, p.CircularizationHalfBurnTime)) {
+            if (!p.CircularizationStarted && v.patchedConicSolver.maneuverNodes.Count != 1) {
+                p.Detail = "Circularization held: expected one native maneuver"; return;
+            }
+            double untilBurn = !p.CircularizationStarted ? v.patchedConicSolver.maneuverNodes[0].UT - Now : 0;
+            if (!p.CircularizationStarted && untilBurn < -10) { LaunchFailure(p, core, "Circularization maneuver window missed"); return; }
+            if (!p.CircularizationStarted && RailLaunch.BurnWindow(v.altitude, home.atmosphereDepth, untilBurn, p.CircularizationHalfBurnTime)) {
                 core.attitude.users.Remove(this);
                 foreach (var engine in v.parts.SelectMany(part => part.FindModulesImplementing<ModuleEngines>())) engine.Activate();
                 p.CircularizationStarted = true; core.node.autowarp = false; core.node.ExecuteOneNode(this); SaveLedger();
             }
             if (p.CircularizationStarted) {
                 p.Detail = FormattableString.Invariant($"Native apoapsis circularization / planned {p.CircularizationDeltaV:F1} m/s / burnTriggered={core.node.burnTriggered}");
-                if (!core.node.enabled && v.orbit.PeA > home.atmosphereDepth + 3000) {
+                if (!core.node.enabled && FlightRules.SafeOrbit(v.orbit.PeA, v.orbit.eccentricity, home.atmosphereDepth)) {
                     core.thrust.ThrustOff(); Change(p, FlightPhase.Rendezvous); PersistGame();
                 } else if (!core.node.enabled && v.orbit.timeToAp > 60) LaunchFailure(p, core, "Native circularization ended without a safe periapsis");
             }
         }
-        void LaunchSample(PodRecord p, Vessel v, double along, double lateral)
+        void LaunchSample(PodRecord p, Vessel v, double along, double lateral, double guideAcceleration = 0)
         {
             if (Now < nextLaunchSample) return; nextLaunchSample = Now + .1;
-            string path = Path.Combine(folder, "RailLaunchEvidence.tsv");
-            if (!File.Exists(path)) File.WriteAllText(path, "ut\tpod\tphase\taltitude\tsurfaceSpeed\talongRail\tlateral\tcircularizationStarted\tthrustKN\tliquidFuel\toxidizer\trcs\tfixedDt\tparts\theatRatio\thottestPart\tg\tqKPa\n");
+            string path = Path.Combine(folder, "RailLaunchEvidence-v2.tsv");
+            if (!File.Exists(path)) File.WriteAllText(path, "ut\tpod\tphase\taltitude\tsurfaceSpeed\talongRail\tlateral\tcircularizationStarted\tthrustKN\tliquidFuel\toxidizer\trcs\tfixedDt\tparts\theatRatio\thottestPart\tg\tqKPa\tguideAcceleration\n");
             var resources = v.parts.Where(part => !StockPods.CargoParts(v).Contains(part)).SelectMany(part => part.Resources.Cast<PartResource>()).ToArray();
             double thrust = v.parts.SelectMany(part => part.FindModulesImplementing<ModuleEngines>()).Sum(e => e.finalThrust);
             var hottest = v.parts.Select(part => new { Part = part, Heat = Math.Max(part.temperature / part.maxTemp, part.skinTemperature / part.skinMaxTemp) }).OrderByDescending(x => x.Heat).First();
-            File.AppendAllText(path, FormattableString.Invariant($"{Now:R}\t{p.Number}\t{p.Phase}\t{v.altitude:R}\t{v.srfSpeed:R}\t{along:R}\t{lateral:R}\t{p.CircularizationStarted}\t{thrust:R}\t{resources.Where(r => r.resourceName == "LiquidFuel").Sum(r => r.amount):R}\t{resources.Where(r => r.resourceName == "Oxidizer").Sum(r => r.amount):R}\t{v.ActionGroups[KSPActionGroup.RCS]}\t{TimeWarp.fixedDeltaTime:R}\t{v.parts.Count}\t{hottest.Heat:R}\t{hottest.Part.partInfo.name}\t{v.geeForce_immediate:R}\t{v.dynamicPressurekPa:R}\n"));
+            File.AppendAllText(path, FormattableString.Invariant($"{Now:R}\t{p.Number}\t{p.Phase}\t{v.altitude:R}\t{v.srfSpeed:R}\t{along:R}\t{lateral:R}\t{p.CircularizationStarted}\t{thrust:R}\t{resources.Where(r => r.resourceName == "LiquidFuel").Sum(r => r.amount):R}\t{resources.Where(r => r.resourceName == "Oxidizer").Sum(r => r.amount):R}\t{v.ActionGroups[KSPActionGroup.RCS]}\t{TimeWarp.fixedDeltaTime:R}\t{v.parts.Count}\t{hottest.Heat:R}\t{hottest.Part.partInfo.name}\t{v.geeForce_immediate:R}\t{v.dynamicPressurekPa:R}\t{guideAcceleration:R}\n"));
         }
         void FixedUpdate()
         {
@@ -658,9 +689,8 @@ namespace RailgunSandbox
             var position = v.GetWorldPos3D(); var relative = position - origin;
             double along = Vector3d.Dot(relative, axis);
             var railLateral = relative - axis * along;
-            LaunchSample(current, v, along, railLateral.magnitude);
-            if (current.Phase == FlightPhase.Ascent) return;
-            if (current.CradleHeight <= 0) return;
+            if (current.Phase == FlightPhase.Ascent) { LaunchSample(current, v, along, railLateral.magnitude); return; }
+            if (current.CradleHeight <= 0) { LaunchSample(current, v, along, railLateral.magnitude); return; }
             Vector3d velocity = v.srf_velocity;
             Vector3d acceleration;
             if (current.Phase == FlightPhase.Reserved) {
@@ -668,8 +698,8 @@ namespace RailgunSandbox
                 Vector3d desiredVelocity = Clamp(-relative * .35, 2);
                 acceleration = Clamp((desiredVelocity - velocity) * 2, 12) + up * home.gravParameter / Math.Pow(home.Radius + v.altitude, 2);
             } else {
-                if (along >= (current.RailOnlyAscent ? RailLaunch.Length : 108)) return;
-                if (!(current.RailOnlyAscent ? RailLaunch.OnGuide(along, railLateral.magnitude) : along >= -2 && railLateral.magnitude <= 2)) { current.Detail = "Rail departure outside guide; no launch force applied"; return; }
+                if (along >= (current.RailOnlyAscent ? RailLaunch.Length : 108)) { LaunchSample(current, v, along, railLateral.magnitude); return; }
+                if (!(current.RailOnlyAscent ? RailLaunch.OnGuide(along, railLateral.magnitude) : along >= -2 && railLateral.magnitude <= 2)) { current.Detail = "Rail departure outside guide; no launch force applied"; LaunchSample(current, v, along, railLateral.magnitude); return; }
                 double gravity = home.gravParameter / Math.Pow(home.Radius + v.altitude, 2);
                 double gravityAlong = gravity * Vector3d.Dot(up, axis);
                 acceleration = axis * (current.RailOnlyAscent ? RailLaunch.DriveAcceleration(Vector3d.Dot(velocity, axis), Time.fixedDeltaTime, gravityAlong) : 50) +
@@ -679,6 +709,7 @@ namespace RailgunSandbox
             v.SetRotation(Quaternion.RotateTowards(v.transform.rotation, orientation, 60 * Time.fixedDeltaTime));
             foreach (var body in v.parts.Select(part => part.rb).Where(body => body != null).Distinct())
                 body.AddForce((Vector3)acceleration, ForceMode.Acceleration);
+            LaunchSample(current, v, along, railLateral.magnitude, acceleration.magnitude);
         }
         void Transfer(PodRecord p, Vessel v, ModuleDockingNode own)
         {
@@ -884,6 +915,7 @@ namespace RailgunSandbox
         }
         void Status()
         {
+            RefreshDeliveryEtas();
             var lines = new StringBuilder(network == null ? "Local reusable fleet / native 1x flight\n" : "Luna shared reusable fleet / native 1x flight\n");
             lines.AppendLine("UT=" + Now.ToString("R", CultureInfo.InvariantCulture)); lines.AppendLine("Error=" + error);
             if (network != null) lines.AppendLine("SharedAuthority: ready=" + network.Ready + " player=" + network.Player + " status=" + network.Status);
@@ -899,6 +931,9 @@ namespace RailgunSandbox
             foreach (var p in state.Pods) {
                 var v = StockPods.Vessel(p);
                 lines.AppendLine($"Pod {p.Number}: {p.Phase} / {p.Detail} / id={p.VesselId} / created={p.Created} / cargoTransferred={p.CargoTransferred}");
+                var eta = PodEta(p);
+                lines.AppendLine("  " + eta.Display(Now) + " / basis=" + eta.Basis);
+                lines.AppendLine(FormattableString.Invariant($"  eta: available={eta.Available} sampleUT={eta.SampleUt:R} earliestUT={eta.EarliestUt:R} latestUT={eta.LatestUt:R}"));
                 if (network != null) lines.AppendLine("  authority: " + network.Diagnostics(p));
                 lines.AppendLine($"  orderPort={p.TargetPort} couplerType={p.DockingType} railOnlyAscent={p.RailOnlyAscent}");
                 if (v != null && v.loaded) {
@@ -924,6 +959,7 @@ namespace RailgunSandbox
                             var guidance = Core(p);
                             if (guidance != null && p.Phase == FlightPhase.Landing)
                                 lines.AppendLine(FormattableString.Invariant($"  thrustControl: mode={guidance.thrust.tmode} speedTarget={guidance.thrust.trans_spd_act:F2} requestedThrottle={guidance.thrust.targetThrottle:F3} actualLimiter={guidance.thrust.limiter} maxAccel={guidance.vesselState.maxThrustAccel:F2} limitedAccel={guidance.vesselState.limitedMaxThrustAccel:F2} groundClearance={Math.Min(guidance.vesselState.altitudeTrue, guidance.vesselState.altitudeBottom):F2} attitudeError={guidance.attitude.attitudeAngleFromTarget():F2}"));
+                            if (guidance != null && p.Phase == FlightPhase.Landing) lines.AppendLine("  terminalPad: " + RecoveryGuidance.TerminalStatus(guidance.landing));
                             if (guidance != null && p.Phase == FlightPhase.Landing && guidance.landing.descentSpeedPolicy != null) {
                                 var predictionModule = guidance.GetComputerModule<MechJebModuleLandingPredictions>();
                                 var predictionPolicy = predictionModule.GetType().GetField("descentSpeedPolicy", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(predictionModule);
@@ -956,6 +992,7 @@ namespace RailgunSandbox
         void OnGUI()
         {
             if (!enabledHere || state == null || showcase) return;
+            if (FlightDriver.Pause) { InputLockManager.RemoveControlLock(LockName); return; }
             GUI.skin = HighLogic.Skin;
             if (menu == null) menu = new AeroMenu();
             window.height = menuCollapsed ? 90 : Mathf.Min(compactMenuPreview ? 680 : 710, Screen.height - 24);
@@ -970,6 +1007,24 @@ namespace RailgunSandbox
             uint anchor = candidate.loaded ? candidate.rootPart.flightID : candidate.protoVessel.protoPartSnapshots[candidate.protoVessel.rootIndex].flightID;
             state.SelectedReceiverAnchor = anchor; state.SelectedReceiverPort = selectedPort = 0; SaveLedger();
             chooseDestination = false; choosePort = true; follow = false; FlightGlobals.SetActiveVessel(candidate);
+        }
+        string EtaKey(PodRecord pod) => pod.OrderId + ":" + pod.Phase;
+        bool EtaReady(PodRecord pod) => network == null ? StockPods.Vessel(pod) == FlightGlobals.ActiveVessel : network.HasActivePilot(pod.Number);
+        DeliveryEstimate PodEta(PodRecord pod)
+        {
+            var stateEstimate = DeliveryEta.State(pod, EtaReady(pod));
+            if (pod.CargoTransferred || !EtaReady(pod) || pod.Phase != FlightPhase.Rendezvous && pod.Phase != FlightPhase.Docking) return stateEstimate;
+            return deliveryEstimateKeys.TryGetValue(pod.Number, out var key) && key == EtaKey(pod) && deliveryEstimates.TryGetValue(pod.Number, out var estimate) ? estimate : stateEstimate;
+        }
+        void RefreshDeliveryEtas()
+        {
+            if (Time.realtimeSinceStartup < nextEtaSample && state.Pods.All(p => deliveryEstimateKeys.TryGetValue(p.Number, out var key) && key == EtaKey(p))) return;
+            nextEtaSample = Time.realtimeSinceStartup + 5;
+            foreach (var pod in state.Pods) {
+                var vessel = StockPods.Vessel(pod);
+                deliveryEstimates[pod.Number] = NativeDeliveryEta.Sample(pod, vessel, Receiver(pod), Core(pod), EtaReady(pod), Now);
+                deliveryEstimateKeys[pod.Number] = EtaKey(pod);
+            }
         }
         static string FriendlyPhase(PodRecord pod)
         {
@@ -1062,6 +1117,7 @@ namespace RailgunSandbox
                 GUILayout.BeginVertical(selectedPod == pod.Number ? menu.SelectedCard : menu.Card);
                 if (GUILayout.Button((selectedPod == pod.Number ? "●  " : "○  ") + "Pod " + pod.Number, selectedPod == pod.Number ? menu.SelectedButton : menu.Button, GUILayout.Height(30))) selectedPod = pod.Number;
                 GUILayout.Space(5); GUILayout.Label(FriendlyPhase(pod), ready ? menu.GoodBadge : menu.Badge, GUILayout.Height(23));
+                if (FlightRules.Busy(pod)) GUILayout.Label(PodEta(pod).Display(Now), menu.Small);
                 GUILayout.Space(4); GUILayout.Label(pod.FlightsCompleted + " completed deliveries", menu.Small);
                 if (network != null) GUILayout.Label(network.Pilot(pod.Number) == "" ? "Shared pod" : "Pilot: " + network.Pilot(pod.Number), menu.Small);
                 if (pod.Created && pod.Phase != FlightPhase.Lost && GUILayout.Button(network != null && network.CanTakeControl(pod.Number) && !network.LeaseValid(pod.Number) ? "Take control / watch" : "Watch pod", menu.Quiet, GUILayout.Height(24))) Run(() => Watch(pod));
@@ -1077,6 +1133,9 @@ namespace RailgunSandbox
                 foreach (var pod in state.Pods) {
                     GUILayout.Label("Pod " + pod.Number + " · " + FriendlyPhase(pod), menu.Heading);
                     GUILayout.Label(pod.Detail, menu.Small);
+                    var eta = PodEta(pod);
+                    GUILayout.Label(eta.Display(Now), menu.Small);
+                    if (eta.Available) GUILayout.Label(eta.Basis, menu.Small);
                     if (pod.LaunchedAt > 0 && FlightRules.Busy(pod)) GUILayout.Label("Elapsed: " + FlightRules.Duration(Now - pod.LaunchedAt), menu.Small);
                     GUILayout.Space(6);
                 }

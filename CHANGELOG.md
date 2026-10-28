@@ -1,12 +1,13 @@
 # Changelog
 
-## Unreleased reusable-pod prototype — 2026-10-27
+## 0.3.2 multiplayer alpha
 
-- Added the separate single-player development source, build instructions and 122 checks under `sandbox/`.
-- Added the native Frutiger Aero delivery menu with destination/port selection, cargo controls, selectable pod cards, compact mode and clearer disabled states.
-- Added physical Junior/standard/Sr. docking hardware fitting with tested resizing and reload persistence.
-- Documented Kerbin-orbit-only dispatch, paused rail-only launch work, remaining round-trip validation and the absence of multiplayer support for this prototype.
-- Existing 0.2.3 release assets and Friends update channel are unchanged.
+- Advisory delivery ETA range in reusable pod cards and flight details, based on native encounter/docking guidance and KSP universal time. Invalidated estimates cannot complete cargo transfer.
+- Watching a pod selects its menu card; the single-player pause menu hides the delivery panel and pauses mechanic updates.
+- Isolated 100 km rail experiment: engines/RCS off through acceleration and coast, separate bounded circularization, improved lost-node handling, and versioned guide-force telemetry.
+- Optional isolated precision-pad guidance uses native engine attitude/throttle, horizontal stopping distance and a strict physical touchdown/stability gate. It remains disabled for ordinary/Luna flights.
+- Read-only launch and landing acceptance audits, including rejection of an intact touchdown outside the home-pad envelope.
+- Existing updater/helper reused byte-for-byte. Matching host/client update is required. See the checkpoint for native evidence and limitations.
 
 ## 0.2.3 bundle (gameplay remains 0.2.0)
 

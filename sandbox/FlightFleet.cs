@@ -130,6 +130,9 @@ namespace RailgunSandbox
             int intactParts, int originalParts, double uprightDegrees = 0) => nativeLanded && sameBody && Finite(padDistance) && padDistance >= 0 && padDistance <= 25 &&
                 Finite(surfaceSpeed) && surfaceSpeed >= 0 && surfaceSpeed <= 0.5 && intactParts >= originalParts && originalParts > 0 &&
                 Finite(uprightDegrees) && uprightDegrees >= 0 && uprightDegrees <= 8;
+        public static bool CanSettleWithoutFuel(bool homeBody, bool splashed, double clearance, double padDistance, double surfaceSpeed, double uprightDegrees) =>
+            homeBody && !splashed && Finite(clearance) && clearance >= 0 && clearance <= 10 && Finite(padDistance) && padDistance >= 0 && padDistance <= 25 &&
+            Finite(surfaceSpeed) && surfaceSpeed >= 0 && surfaceSpeed <= 5 && Finite(uprightDegrees) && uprightDegrees >= 0 && uprightDegrees <= 8;
         public static bool StableLanding(PodRecord p, bool evidence, double now)
         {
             if (!evidence) { p.StableSince = -1; return false; }

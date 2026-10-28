@@ -1,24 +1,24 @@
 # Railgun Logistics client updates
 
-The reusable-pod client is the **0.3.1 multiplayer alpha**. It combines the physical-flight prototype with the existing mod and its updater. The older 0.2.3 assisted-docking download remains available separately. Check the release page and the pinned Friends channel for what has actually been published; a source commit or draft does not update a player.
+The reusable-pod client is the **0.3.2 multiplayer alpha**. It adds a delivery ETA range to the physical-pod menu. The older 0.2.3 assisted-docking download remains available separately. Check the release page and the pinned Friends channel for what has actually been published; a source commit or draft does not update a player.
 
 ## Requirements and first installation
 
 Use Windows, KSP 1.12.5 build 3190, Luna Multiplayer 0.29.2, ModuleManager, MechJeb 2.14.3 and Harmony 2.2.1 from the shared server's mod pack. This small download contains our mod, not the game or third-party mod pack.
 
-Close KSP, extract the ordinary **RailgunLogistics-0.3.1.zip**, and copy its **GameData/RailgunLogistics** folder into your game's GameData folder. Back up an existing copy first and preserve your Settings.xml. Copy the entire folder, including Parts and Updater. Keep your existing Luna client, saves and other mods. An older separate development addon at GameData/RailgunSandbox must be backed up outside GameData before installing the integrated client, or duplicate game modules would load.
+Close KSP, extract the ordinary **RailgunLogistics-0.3.2.zip**, and copy its **GameData/RailgunLogistics** folder into your game's GameData folder. Back up an existing copy first and preserve your Settings.xml. Copy the entire folder, including Parts and Updater. Keep your existing Luna client, saves and other mods. An older separate development addon at GameData/RailgunSandbox must be backed up outside GameData before installing the integrated client, or duplicate game modules would load.
 
-Players do not run an installer, a command, or ApplyUpdate.exe. GitHub's **Code / Download ZIP** contains source rather than the playable mod. The ZIP named **RailgunLogistics-Update-0.3.1.zip** is the updater's internal payload, not the first-install download.
+Players do not run an installer, a command, or ApplyUpdate.exe. GitHub's **Code / Download ZIP** contains source rather than the playable mod. The ZIP named **RailgunLogistics-Update-0.3.2.zip** is the updater's internal payload, not the first-install download.
 
 ## Updating an existing client
 
-Existing **0.3.0** clients receive 0.3.1 in one normal update cycle: start KSP, follow the downloaded-update notice, quit normally, then reopen. The patch fixes recovery after Luna timeline changes, preserves the original flight and keeps guided deliveries at 1x.
+Existing **0.3.0 / 0.3.1** clients receive 0.3.2 in one normal update cycle after channel promotion: start KSP, follow the downloaded-update notice, quit normally, then reopen. The delivery ETA is advisory and uses KSP universal time. Missing guidance or a usable trajectory shows calculating rather than a fabricated countdown. Cargo still transfers only after physical docking.
 
 ### From 0.2.3
 
 Start KSP normally. The older updater reads **channel/friends.xml**, which installs the **0.2.5 updater bridge** while retaining the classic gameplay DLL. Follow its notice: quit normally, wait for the background helper, then start KSP again.
 
-The newer updater reads **channel/reusable.xml**. It checks the required mod versions and downloads the integrated 0.3.1 client. Follow that second notice and quit/reopen once more. This one-time migration takes two update cycles; later compatible updates use the ordinary single cycle. The Luna host requires the matching gameplay DLL, so finish the client update before joining.
+The newer updater reads **channel/reusable.xml**. It checks the required mod versions and downloads the integrated 0.3.2 client. Follow that second notice and quit/reopen once more. This one-time migration takes two update cycles; later compatible updates use the ordinary single cycle. The Luna host requires the matching gameplay DLL, so finish the client update before joining.
 
 Missing or incompatible dependencies leave the installed client unchanged and produce a message. Install the shared server's required mod pack, then start KSP again. Updates download at the main menu and apply only after that game instance closes. The helper preserves settings and extra files, keeps backups outside GameData, verifies every archive entry and file hash, and does not stop KSP, replace Luna, alter saves or update the server.
 
@@ -27,6 +27,8 @@ Missing or incompatible dependencies leave the installed client unchanged and pr
 The server owns two persistent physical pods. The native delivery menu selects an exact receiver port and fits the corresponding stock Junior, standard or Sr. connector before departure. Flight code covers rail-assisted launch, powered ascent, rendezvous, stock docking, cargo transfer, undocking and powered home-pad recovery/refit. A pod is unavailable until its return is accepted; losses do not generate replacements. Both clients share reservations and flight state through Luna.
 
 Native two-client testing has demonstrated shared fleet state, ownership handoff, actual connector fitting, rail launch, powered ascent and stable orbit. A complete consecutive multiplayer docking/delivery/return cycle remains unverified. The alpha is limited to stable Kerbin-orbit receivers, one foreground guided flight, the same Luna subspace and 1x time. It does not implement Minmus/interplanetary routing or server-side powered flight while its controlling clients are offline. Keep a matching Universe/fleet backup before testing.
+
+The new rail-only and precision-pad controllers are isolated engineering experiments. Ordinary and Luna flights continue using rail assist plus powered ascent and the existing native landing controller. Two experimental orbital launches and a successful saved-descent landing replay do not establish multiplayer readiness. See [the checkpoint](docs/Launch-Landing-Checkpoint.md) for measured results and unresolved cases.
 
 ## Host publishing and diagnostics
 

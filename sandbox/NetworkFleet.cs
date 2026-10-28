@@ -66,6 +66,11 @@ namespace RailgunSandbox
         FleetSlot Slot(int number) => authority?.Slots.SingleOrDefault(s => s.Pod.Number == number);
         public string Pilot(int number) => Slot(number)?.Pilot ?? "";
         public string Dispatcher(int number) => Slot(number)?.Dispatcher ?? "";
+        public bool HasActivePilot(int number)
+        {
+            var slot = Slot(number);
+            return Ready && slot != null && slot.Pilot != "" && slot.Lease != "" && slot.LeaseUntil > Now + 2;
+        }
         bool OwnsDockedReceiver(PodRecord pod)
         {
             if (pod.Phase != FlightPhase.Docking && pod.Phase != FlightPhase.Unloading) return false;
