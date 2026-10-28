@@ -30,16 +30,18 @@ namespace RailgunSandbox
             } catch (Exception ex) { Debug.LogError("[RailgunSandbox] Automatic local test load failed: " + ex); }
         }
     }
-    // Deliberately local: no Luna references, messages, server files or public-save activation.
+    // Standalone test save, or the server-owned fleet when joined through Luna.
     [KSPAddon(KSPAddon.Startup.Flight, false)]
     public sealed class SandboxFlight : MonoBehaviour
     {
         public static SandboxFlight Instance { get; private set; }
-        public static bool ReentryTestSave => Environment.GetCommandLineArgs().Contains("-railgun-reentry");
-        public static bool RailLaunchTestSave => Environment.GetCommandLineArgs().Contains("-railgun-railonly");
-        public static bool PortSelectionTestSave => Environment.GetCommandLineArgs().Contains("-railgun-porttest");
-        public static string SaveName => PortSelectionTestSave ? "Railgun-Port-Selection-Test" : RailLaunchTestSave ? "Railgun-RailOnly-Test" : ReentryTestSave ? "Railgun-Reentry-Test" : Environment.GetCommandLineArgs().Contains("-railgun-demo") ? "Railgun-Reusable-Demo" : "Railgun-Reusable-Sandbox";
+        public void OpenMenu() { menuCollapsed = false; showcase = false; }
+        public static bool ReentryTestSave => !NetworkFleet.IsMultiplayer && Environment.GetCommandLineArgs().Contains("-railgun-reentry");
+        public static bool RailLaunchTestSave => !NetworkFleet.IsMultiplayer && Environment.GetCommandLineArgs().Contains("-railgun-railonly");
+        public static bool PortSelectionTestSave => !NetworkFleet.IsMultiplayer && Environment.GetCommandLineArgs().Contains("-railgun-porttest");
+        public static string SaveName => NetworkFleet.IsMultiplayer ? "LunaMultiplayer" : PortSelectionTestSave ? "Railgun-Port-Selection-Test" : RailLaunchTestSave ? "Railgun-RailOnly-Test" : ReentryTestSave ? "Railgun-Reentry-Test" : Environment.GetCommandLineArgs().Contains("-railgun-demo") ? "Railgun-Reusable-Demo" : "Railgun-Reusable-Sandbox";
         FleetState state;
+        NetworkFleet network;
         DepotModel model;
         CelestialBody home;
         string folder, error = "", detail = "Prepare the depot to create its two persistent stock-part pods.";
@@ -53,6 +55,7 @@ namespace RailgunSandbox
         bool menuCollapsed, chooseDestination, choosePort, showFlightDetails, compactMenuPreview;
         Vector2 scroll;
         readonly Dictionary<string, string> armed = new Dictionary<string, string>();
+        readonly HashSet<string> guidedByUs = new HashSet<string>();
         MonoBehaviour legacyService;
         bool legacyWasEnabled;
         bool showcase;
@@ -65,13 +68,19 @@ namespace RailgunSandbox
         {
             if (HighLogic.SaveFolder != SaveName) yield break;
             while (!FlightGlobals.ready || HighLogic.CurrentGame == null) yield return null;
-            enabledHere = HighLogic.SaveFolder == SaveName && HighLogic.CurrentGame != null && HighLogic.CurrentGame.Mode == Game.Modes.SANDBOX;
+            enabledHere = HighLogic.SaveFolder == SaveName && HighLogic.CurrentGame != null && (NetworkFleet.IsMultiplayer || HighLogic.CurrentGame.Mode == Game.Modes.SANDBOX);
             if (!enabledHere) yield break;
             Instance = this;
             backgroundBefore = Application.runInBackground; Application.runInBackground = true;
             folder = Path.Combine(KSPUtil.ApplicationRootPath, "saves", SaveName);
+            if (NetworkFleet.IsMultiplayer) {
+                network = NetworkFleet.Shared; state = network.Local;
+                while (enabledHere && !network.Ready) { network.Pump(ref state); yield return null; }
+                follow = network.FollowFlight;
+            }
             try {
-                state = File.Exists(Ledger) ? Read<FleetState>(Ledger) : FleetState.New(); state.Validate();
+                if (network == null) state = File.Exists(Ledger) ? Read<FleetState>(Ledger) : FleetState.New();
+                state.Validate();
                 home = FlightGlobals.Bodies.First(b => b.bodyName == state.HomeBody);
                 var normal = home.GetRelSurfaceNVector(state.HomeLatitude, state.HomeLongitude);
                 ground = Math.Max(0, home.pqsController.GetSurfaceHeight(normal) - home.pqsController.radius);
@@ -80,12 +89,13 @@ namespace RailgunSandbox
                 // Prevent the earlier unlimited countdown service being invoked in this two-pod test save.
                 legacyService = FindObjectsOfType<MonoBehaviour>().FirstOrDefault(c => c.GetType().FullName == "RailgunLogistics.Logistics");
                 if (legacyService != null) { legacyWasEnabled = legacyService.enabled; legacyService.enabled = false; }
-                Debug.Log("[RailgunSandbox] Local reusable depot enabled only in " + SaveName + "; two slots; real 1x flight.");
+                Debug.Log("[RailgunSandbox] " + (network == null ? "Local" : "Server-owned shared") + " reusable depot enabled in " + SaveName + "; two slots; real 1x flight.");
             } catch (Exception ex) { Fail(ex); }
         }
         static T Read<T>(string path) { using (var file = File.OpenRead(path)) return (T)new XmlSerializer(typeof(T)).Deserialize(file); }
         void SaveLedger()
         {
+            if (network != null) { network.Save(state); return; }
             if (faulted) throw new IOException("Fleet storage failed. Restart after restoring the matching sandbox save and fleet ledger.");
             try {
                 state.Validate(); string temp = Ledger + ".tmp";
@@ -97,6 +107,7 @@ namespace RailgunSandbox
         }
         void PersistGame()
         {
+            if (network != null) { network.PublishNative(state); network.Save(state); return; }
             string result = GamePersistence.SaveGame("persistent", SaveName, SaveMode.OVERWRITE);
             if (string.IsNullOrEmpty(result)) throw new IOException("KSP could not persist the physical pods.");
             SaveLedger();
@@ -121,7 +132,12 @@ namespace RailgunSandbox
         {
             if (state.Pods.All(p => p.Created)) throw new InvalidOperationException("The depot already owns its two pods. Missing or lost pods are not replaced.");
             string missing = StockPods.Missing(); if (missing.Length > 0) throw new InvalidOperationException("KSP did not load required parts: " + missing);
+            if (network != null) {
+                network.SetupRequested = true;
+                foreach (var pod in state.Pods.Where(p => !p.Created)) network.Acquire(pod);
+            }
             foreach (var pod in state.Pods.Where(p => !p.Created)) {
+                if (network != null && !network.CanAct(pod)) continue;
                 // Recover the same UUID after a crash between the KSP save and sidecar commit.
                 var existing = StockPods.Vessel(pod);
                 if (existing != null) {
@@ -133,8 +149,9 @@ namespace RailgunSandbox
                 } else { Pad(pod, out double lat, out double lon); StockPods.Spawn(pod, home, lat, lon, ground); }
                 PersistGame();
             }
-            detail = "Two real stock-part pods created and saved. Let them settle, then select a receiver.";
-            Watch(state.Pods[0]);
+            detail = network == null ? "Two real stock-part pods created and saved. Let them settle, then select a receiver." : "Shared pod setup submitted; waiting for native synchronization and depot placement.";
+            var created = state.Pods.FirstOrDefault(p => p.Created && (network == null || network.LeaseValid(p.Number)));
+            if (created != null && network == null) Watch(created);
         }
         static string ConnectorType(ModuleDockingNode port)
         {
@@ -182,6 +199,7 @@ namespace RailgunSandbox
         }
         void Dispatch(PodRecord p, Vessel target, uint portId, double units)
         {
+            if (network != null && !network.CanReserve(p)) throw new InvalidOperationException("Waiting for this pod's server reservation slot.");
             if (faulted) throw new IOException("Fleet storage is unavailable.");
             if (target == null || target.mainBody != home || target.orbit.PeA < home.atmosphereDepth + 3000 ||
                 target.situation != Vessel.Situations.ORBITING || target.parts.Any(part => part.FindModuleImplementing<RailgunFlightPod>() != null))
@@ -206,11 +224,33 @@ namespace RailgunSandbox
         void Watch(PodRecord p)
         {
             var v = StockPods.Vessel(p) ?? throw new InvalidOperationException("The saved physical pod is missing. No replacement was generated.");
-            FlightGlobals.SetActiveVessel(v); follow = true;
+            network?.RequestControl(p);
+            follow = true;
+            if (network != null) network.FollowFlight = true;
+            FlightGlobals.SetActiveVessel(v);
         }
         void Update()
         {
-            if (!enabledHere || state == null || faulted) return;
+            if (!enabledHere || state == null || home == null || faulted) return;
+            if (network != null) {
+                network.Pump(ref state);
+                foreach (var pod in state.Pods.Where(p => !network.LeaseValid(p.Number))) {
+                    if (!guidedByUs.Remove(pod.VesselId)) continue;
+                    var core = Core(pod);
+                    if (core != null) {
+                        if (network.NativeOwner(pod, false)) StopFlight(core);
+                        else {
+                            RecoveryGuidance.Remove(core.landing);
+                            core.GetComputerModule<MechJebModuleAscentAutopilot>().users.Remove(this);
+                            core.GetComputerModule<MechJebModuleRendezvousAutopilot>().users.Remove(this);
+                            core.GetComputerModule<MechJebModuleDockingAutopilot>().users.Remove(this);
+                            core.landing.users.Remove(this); core.node.users.Remove(this); core.attitude.users.Remove(this); core.rcs.users.Remove(this);
+                        }
+                    }
+                    armed.Remove(pod.VesselId);
+                }
+                if (!network.Ready) { detail = network.Error; return; }
+            }
             if (!state.Pods.Any(FlightRules.Busy) && FlightGlobals.ActiveVessel?.mainBody == home) ResolveGround();
             model?.Place(home, state.HomeLatitude, state.HomeLongitude, ground);
             var guided = state.Pods.FirstOrDefault(p => p.Phase == FlightPhase.Reserved || p.Phase == FlightPhase.RailLaunch);
@@ -223,7 +263,16 @@ namespace RailgunSandbox
             if (Time.realtimeSinceStartup < nextTick || !FlightGlobals.ready) return;
             nextTick = Time.realtimeSinceStartup + .25;
             try {
+                if (network != null && network.SetupRequested) {
+                    if (network.ConstructionAccepted) {
+                        network.SetupRequested = false;
+                        var unsettled = state.Pods.FirstOrDefault(p => !StockPods.PlacementSettled(p));
+                        if (unsettled != null) Watch(unsettled);
+                    }
+                    else if (state.Pods.Any(p => !p.Created)) Prepare();
+                }
                 foreach (var p in state.Pods) {
+                    if (network != null && !network.CanAct(p)) continue;
                     if (!p.Created) continue;
                     var v = StockPods.Vessel(p);
                     if (v == null || v.state == Vessel.State.DEAD) {
@@ -245,6 +294,13 @@ namespace RailgunSandbox
                 }
                 // One foreground autopilot at a time. A second reservation stays occupied on its pad.
                 var current = state.Pods.FirstOrDefault(p => FlightRules.Busy(p) && p.Phase != FlightPhase.Reserved) ?? state.Pods.FirstOrDefault(p => p.Phase == FlightPhase.Reserved);
+                if (current != null && network != null && current.Phase == FlightPhase.Returning && network.Dispatcher(current.Number) == network.Player &&
+                    network.CanTakeControl(current.Number) && !network.LeaseValid(current.Number)) {
+                    if (StockPods.Vessel(current) != FlightGlobals.ActiveVessel) Watch(current); else network.RequestControl(current);
+                    return;
+                }
+                if (current != null && network != null && !network.CanAct(current)) return;
+                if (current != null && network != null) guidedByUs.Add(current.VesselId);
                 if (current != null && (!ReentryTestSave || current.RecoveryTest || current.Phase != FlightPhase.Rendezvous) &&
                     (!RailLaunchTestSave || current.Phase != FlightPhase.Rendezvous)) Tick(current);
             } catch (Exception ex) { Fail(ex); }
@@ -580,9 +636,10 @@ namespace RailgunSandbox
         }
         void FixedUpdate()
         {
-            if (!enabledHere || faulted || state == null || !FlightGlobals.ready || TimeWarp.CurrentRate != 1 || PortSelectionTestSave) return;
+            if (!enabledHere || faulted || state == null || home == null || !FlightGlobals.ready || TimeWarp.CurrentRate != 1 || PortSelectionTestSave) return;
             var current = state.Pods.FirstOrDefault(p => FlightRules.Busy(p) && p.Phase != FlightPhase.Reserved) ?? state.Pods.FirstOrDefault(p => p.Phase == FlightPhase.Reserved);
             if (current == null || current.Phase != FlightPhase.Reserved && current.Phase != FlightPhase.RailLaunch && current.Phase != FlightPhase.Ascent) return;
+            if (network != null && !network.CanAct(current)) return;
             var v = StockPods.Vessel(current); if (v == null || !v.loaded || v.packed || v != FlightGlobals.ActiveVessel || v.rootPart?.rb == null) return;
             if (RailLaunch.EnginesLocked(current)) ShutdownLaunchPropulsion(v, Core(current));
             RailFrame(current, out var origin, out var axis, out var up);
@@ -815,8 +872,9 @@ namespace RailgunSandbox
         }
         void Status()
         {
-            var lines = new StringBuilder("Local sandbox only / native 1x flight / no multiplayer\n");
+            var lines = new StringBuilder(network == null ? "Local reusable fleet / native 1x flight\n" : "Luna shared reusable fleet / native 1x flight\n");
             lines.AppendLine("UT=" + Now.ToString("R", CultureInfo.InvariantCulture)); lines.AppendLine("Error=" + error);
+            if (network != null) lines.AppendLine("SharedAuthority: ready=" + network.Ready + " player=" + network.Player + " error=" + network.Error);
             lines.AppendLine($"NativeChecks: warp={TimeWarp.CurrentRate:R} fixedDt={TimeWarp.fixedDeltaTime:R} infinitePropellant={CheatOptions.InfinitePropellant} infiniteElectricity={CheatOptions.InfiniteElectricity} ignoreTemperature={CheatOptions.IgnoreMaxTemperature} unbreakableJoints={CheatOptions.UnbreakableJoints} noCrashDamage={CheatOptions.NoCrashDamage}");
             lines.AppendLine("Active=" + FlightGlobals.ActiveVessel?.vesselName);
             lines.AppendLine($"Menu: collapsed={menuCollapsed} selectedPod={selectedPod} resource={resource} quantity={quantity} compact={compactMenuPreview}");
@@ -829,6 +887,7 @@ namespace RailgunSandbox
             foreach (var p in state.Pods) {
                 var v = StockPods.Vessel(p);
                 lines.AppendLine($"Pod {p.Number}: {p.Phase} / {p.Detail} / id={p.VesselId} / created={p.Created} / cargoTransferred={p.CargoTransferred}");
+                if (network != null) lines.AppendLine("  authority: " + network.Diagnostics(p));
                 lines.AppendLine($"  orderPort={p.TargetPort} couplerType={p.DockingType} railOnlyAscent={p.RailOnlyAscent}");
                 if (v != null && v.loaded) {
                     var coupler = OwnPort(p);
@@ -924,7 +983,7 @@ namespace RailgunSandbox
             GUILayout.BeginHorizontal(menu.Header, GUILayout.Height(62));
             GUILayout.Label(menu.Orb, GUILayout.Width(48), GUILayout.Height(48)); GUILayout.Space(10);
             GUILayout.BeginVertical(); GUILayout.Label("Railgun Logistics", menu.Title);
-            GUILayout.Label("Deliver. Return. Reuse.", menu.White); GUILayout.EndVertical();
+            GUILayout.Label(network == null ? "Deliver. Return. Reuse." : "Shared Luna depot · Deliver. Return. Reuse.", menu.White); GUILayout.EndVertical();
             if (GUILayout.Button(menuCollapsed ? "+" : "−", menu.Quiet, GUILayout.Width(30), GUILayout.Height(28))) { menuCollapsed = !menuCollapsed; GUI.FocusControl(null); }
             GUILayout.EndHorizontal();
             GUI.DragWindow(new Rect(0, 0, 460, 78));
@@ -992,7 +1051,8 @@ namespace RailgunSandbox
                 if (GUILayout.Button((selectedPod == pod.Number ? "●  " : "○  ") + "Pod " + pod.Number, selectedPod == pod.Number ? menu.SelectedButton : menu.Button, GUILayout.Height(30))) selectedPod = pod.Number;
                 GUILayout.Space(5); GUILayout.Label(FriendlyPhase(pod), ready ? menu.GoodBadge : menu.Badge, GUILayout.Height(23));
                 GUILayout.Space(4); GUILayout.Label(pod.FlightsCompleted + " completed deliveries", menu.Small);
-                if (pod.Created && pod.Phase != FlightPhase.Lost && GUILayout.Button("Watch pod", menu.Quiet, GUILayout.Height(24))) Run(() => Watch(pod));
+                if (network != null) GUILayout.Label(network.Pilot(pod.Number) == "" ? "Shared pod" : "Pilot: " + network.Pilot(pod.Number), menu.Small);
+                if (pod.Created && pod.Phase != FlightPhase.Lost && GUILayout.Button(network != null && network.CanTakeControl(pod.Number) && !network.LeaseValid(pod.Number) ? "Take control / watch" : "Watch pod", menu.Quiet, GUILayout.Height(24))) Run(() => Watch(pod));
                 GUILayout.EndVertical();
                 if (pod.Number == 1) GUILayout.Space(7);
             }
@@ -1014,17 +1074,20 @@ namespace RailgunSandbox
             var selected = state.Pods.First(p => p.Number == selectedPod);
             bool portReserved = selectedPort != 0 && state.Pods.Any(p => FlightRules.Busy(p) && p.TargetPort == selectedPort);
             bool amountValid = double.TryParse(quantity, NumberStyles.Float, CultureInfo.InvariantCulture, out double units) && FlightRules.Finite(units) && units > 0 && units <= limit;
-            bool setup = state.Pods.All(p => !p.Created);
-            string hint = faulted ? "Storage needs attention before a delivery can start." : !string.IsNullOrEmpty(error) ? error : setup ? "Set up the depot to prepare your two reusable pods." :
+            bool setup = state.Pods.Any(p => !p.Created);
+            string hint = faulted ? "Storage needs attention before a delivery can start." : !string.IsNullOrEmpty(error) ? error :
+                network != null && !network.Ready ? "Waiting for shared server authority." :
+                network != null && !string.IsNullOrEmpty(network.Error) ? network.Error : setup ? "Set up the depot to prepare your two reusable pods." :
                 selected.Phase != FlightPhase.Ready ? "Pod " + selected.Number + " is " + FriendlyPhase(selected).ToLowerInvariant() + ". Choose a ready pod." :
                 !routeSupported ? "Choose a destination in stable Kerbin orbit." : chosen == null ? "View the destination and select a free docking port." :
                 portReserved ? "A pod is already assigned to this port. Choose another port." :
                 limit <= 0 ? "There is no free space for this supply at the destination." :
                 !amountValid ? "Enter a positive amount up to " + limit.ToString("N0", CultureInfo.InvariantCulture) + " units." :
+                network != null && !network.CanReserve(selected) ? "Waiting for the pod's server reservation slot." :
                 "Ready: " + quantity + " units · Pod " + selectedPod + " · matching connector";
             GUILayout.Label(hint, !string.IsNullOrEmpty(error) ? menu.Warning : menu.Text, GUILayout.Height(34));
             bool enabledBefore = GUI.enabled;
-            GUI.enabled = enabledBefore && !faulted && (setup || selected.Created && selected.Phase == FlightPhase.Ready && chosen != null && routeSupported && amountValid && !portReserved);
+            GUI.enabled = enabledBefore && !faulted && (network == null || network.Ready) && (setup || selected.Created && selected.Phase == FlightPhase.Ready && chosen != null && routeSupported && amountValid && !portReserved && (network == null || network.CanReserve(selected)));
             if (GUILayout.Button(setup ? "Set up depot" : "Send pod " + selectedPod, menu.Primary, GUILayout.Height(42))) {
                 if (setup) Run(Prepare); else Run(() => Dispatch(selected, target, selectedPort, units));
             }
@@ -1034,6 +1097,8 @@ namespace RailgunSandbox
         void Run(Action action) { try { action(); error = ""; } catch (Exception ex) { Fail(ex); } }
         void OnDestroy() {
             if (Instance == this) Instance = null;
+            if (network != null) network.FollowFlight = follow;
+            // Luna synchronization and unacknowledged commits survive native scene switches.
             RecoveryGuidance.RemoveOwner(this);
             if (showcase && KSP.UI.UIMasterController.Instance != null) { KSP.UI.UIMasterController.Instance.ShowUI(); GameEvents.onShowUI.Fire(); }
             model?.Dispose(); InputLockManager.RemoveControlLock(LockName);

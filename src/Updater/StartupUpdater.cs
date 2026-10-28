@@ -35,6 +35,7 @@ namespace RailgunLogistics.Updates
                 string manifest=Path.Combine(job,"release.xml");
                 Release.Download(Release.Channel+"?check="+DateTime.UtcNow.Ticks,manifest,65536);
                 var release=Release.Read(manifest);
+                release.CheckRequirements(root);
                 if(release.Matches(mod)) { File.WriteAllText(Path.Combine(state,"last-check.txt"),DateTime.UtcNow.ToString("o")+" Current: "+release.Version); return; }
                 Release.Download(release.Url,Path.Combine(job,"client.zip"),Release.MaxDownload);
                 if(!string.Equals(Release.Hash(Path.Combine(job,"client.zip")),release.Sha256,StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Download checksum mismatch.");

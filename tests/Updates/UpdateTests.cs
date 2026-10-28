@@ -27,6 +27,7 @@ static class UpdateTests
             string path=Path.Combine(lab,"manifest.xml"); doc.Save(path); Reject(()=>Release.Read(path),"reject manifest "+attribute+"="+value);
         };
         badManifest("PackageUrl","https://evil.example/release.zip"); badManifest("PackageUrl","http://github.com/"+Release.Repository+"/releases/download/v1/p.zip");
+        badManifest("ReusableFleet","unknown");
         badManifest("PackageUrl","https://github.com/other/repo/releases/download/v1/p.zip"); badManifest("KspBuild","3189"); badManifest("LunaVersion","0.29.1.0"); badManifest("Sha256","garbage");
         var duplicate=XDocument.Load(Path.Combine(source,"friends.xml")); duplicate.Root.Add(new XElement(duplicate.Root.Elements("File").First()));
         string duplicatePath=Path.Combine(lab,"duplicate.xml"); duplicate.Save(duplicatePath); Reject(()=>Release.Read(duplicatePath),"reject duplicate manifest entries");
@@ -43,6 +44,21 @@ static class UpdateTests
         release.Sha256=Release.Hash(tampered); Reject(()=>release.ExtractVerified(tampered,Path.Combine(lab,"tampered")),"reject file checksum even when archive checksum matches");
         string xmlBomb=Path.Combine(lab,"dtd.xml"); File.WriteAllText(xmlBomb,"<!DOCTYPE a [<!ENTITY test SYSTEM 'file:///C:/Windows/win.ini'>]><Release>&test;</Release>");
         Reject(()=>Release.Read(xmlBomb),"reject external XML entities");
+        var fleetRelease=new Release { ReusableFleet=true };
+        string requirements=Path.Combine(lab,"requirements"); Directory.CreateDirectory(Path.Combine(requirements,"GameData"));
+        Reject(()=>fleetRelease.CheckRequirements(requirements),"missing guidance dependencies retain the old client");
+        string installed=args.Length>1 ? args[1] : @"C:\SteamLibrary\steamapps\common\Kerbal Space Program";
+        foreach(string path in new[]{"MechJeb2/Plugins/MechJeb2.dll","000_Harmony/0Harmony.dll"}) {
+            string target=Path.Combine(requirements,"GameData",path); Directory.CreateDirectory(Path.GetDirectoryName(target)); File.Copy(Path.Combine(installed,"GameData",path),target);
+        }
+        Reject(()=>fleetRelease.CheckRequirements(requirements),"part patching dependency is checked before staging");
+        File.WriteAllText(Path.Combine(requirements,"GameData/ModuleManager.4.2.3.dll"),"presence fixture");
+        fleetRelease.CheckRequirements(requirements); Assert(true,"the pinned server mod pack satisfies reusable dependencies");
+        string duplicatePrototype=Path.Combine(requirements,"GameData/RailgunSandbox/Plugins/RailgunSandbox.dll"); Directory.CreateDirectory(Path.GetDirectoryName(duplicatePrototype)); File.WriteAllText(duplicatePrototype,"duplicate fixture");
+        Reject(()=>fleetRelease.CheckRequirements(requirements),"duplicate standalone prototype blocks automatic installation");
+        File.Delete(duplicatePrototype);
+        File.Copy(typeof(UpdateTests).Assembly.Location,Path.Combine(requirements,"GameData/MechJeb2/Plugins/MechJeb2.dll"),true);
+        Reject(()=>fleetRelease.CheckRequirements(requirements),"a different guidance version is rejected");
         Console.WriteLine(count+" updater checks passed. Fixtures: "+lab); return 0;
     }
 }

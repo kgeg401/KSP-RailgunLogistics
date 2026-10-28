@@ -18,6 +18,7 @@ namespace RailgunLogisticsServer
     {
         readonly object gate=new object();
         Depot depot;
+        ReusableFleetService reusable;
         public override void OnServerStart()
         {
             try
@@ -33,8 +34,10 @@ namespace RailgunLogisticsServer
                 LunaLog.Normal("[RailgunLogistics] v0.2.0 ready; persistent physical cargo pods enabled.");
             }
             catch(Exception ex){depot=null;LunaLog.Error("[RailgunLogistics] Disabled: "+ex);}
+            try { reusable=new ReusableFleetService(); reusable.Start(); }
+            catch(Exception ex) { reusable=null; LunaLog.Error("[RailgunReusable] Disabled: "+ex); }
         }
-        public override void OnServerStop(){LmpModInterface.UnregisterModHandler(Rules.Channel);}
+        public override void OnServerStop(){LmpModInterface.UnregisterModHandler(Rules.Channel);reusable?.Stop();}
         static bool Owns(ClientStructure client,Guid vessel)=>LockSystem.LockQuery.ControlLockBelongsToPlayer(vessel,client.PlayerName);
         static Server.System.Vessel.Classes.Part Receiver(Guid vessel,uint anchor)
         {

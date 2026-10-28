@@ -1,4 +1,4 @@
-param([string]$BundleVersion='0.2.3')
+param([string]$BundleVersion='0.2.3', [string]$GameplayClientDll='', [switch]$ReusableFleet)
 $ErrorActionPreference='Stop'
 $root=$PSScriptRoot
 foreach($project in @('src\Updater\RailgunLogistics.Updater.csproj','src\UpdateHelper\ApplyUpdate.csproj')) {
@@ -23,6 +23,20 @@ try {
         }
     }
 } finally { $old.Dispose() }
+if ($GameplayClientDll) {
+    $gameplay = (Resolve-Path -LiteralPath $GameplayClientDll).Path
+    if ([Reflection.AssemblyName]::GetAssemblyName($gameplay).Name -ne 'RailgunLogistics') { throw 'Expected the built RailgunLogistics client assembly.' }
+    Copy-Item -LiteralPath $gameplay -Destination (Join-Path $client 'Plugins\RailgunLogistics.dll') -Force
+}
+if ($ReusableFleet) {
+    if (!$GameplayClientDll) { throw 'A current integrated gameplay DLL is required for a reusable-fleet release.' }
+    Copy-Item -LiteralPath (Join-Path $root 'sandbox\GameData\RailgunSandbox\ReusableParts.cfg') -Destination (Join-Path $client 'Parts\ReusableParts.cfg')
+    $serverSource=Join-Path $root 'src\Server\bin\Release\net6.0\RailgunLogistics.Server.dll'
+    if ([Reflection.AssemblyName]::GetAssemblyName($serverSource).Version.ToString() -ne '0.3.0.0') { throw 'Build the matching shared-fleet server first.' }
+    $serverTarget=Join-Path $bundle 'Server\Plugins'; New-Item -ItemType Directory -Path $serverTarget -Force | Out-Null
+    Copy-Item -LiteralPath $serverSource -Destination $serverTarget
+    Copy-Item -LiteralPath (Join-Path $root 'Install.ps1') -Destination $bundle
+}
 $updater=Join-Path $client 'Updater'
 New-Item -ItemType Directory -Path $updater -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $root 'src\Updater\bin\Release\net472\RailgunLogistics.Updater.dll') -Destination $updater
@@ -39,6 +53,7 @@ try {
 $xml=New-Object Xml.XmlDocument
 $release=$xml.CreateElement('Release'); $xml.AppendChild($release) | Out-Null
 foreach($pair in @{ Version=$BundleVersion; KspBuild='3190'; LunaVersion='0.29.2.0'; PackageUrl="https://github.com/kgeg401/KSP-RailgunLogistics/releases/download/v$BundleVersion/RailgunLogistics-Update-$BundleVersion.zip"; Sha256=(Get-FileHash -LiteralPath $clientZip -Algorithm SHA256).Hash.ToLowerInvariant() }.GetEnumerator()) { $release.SetAttribute($pair.Key,$pair.Value) }
+if ($ReusableFleet) { $release.SetAttribute('ReusableFleet','true') }
 foreach($f in Get-ChildItem -LiteralPath $client -File -Recurse | Sort-Object FullName) {
     $relative=$f.FullName.Substring($client.Length+1).Replace('\','/')
     if($relative -eq 'Settings.xml') { continue }

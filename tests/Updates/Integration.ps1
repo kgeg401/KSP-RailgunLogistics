@@ -1,4 +1,4 @@
-param([string]$BundleVersion='0.2.3')
+param([string]$BundleVersion='0.2.3', [string]$HelperPath='')
 $ErrorActionPreference='Stop'
 $project=(Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $build=Join-Path $project "update-release\$BundleVersion"
@@ -9,12 +9,21 @@ $lmp=Join-Path $game 'GameData\LunaMultiplayer\Plugins'
 New-Item -ItemType Directory -Path $mod,$lmp -Force | Out-Null
 Copy-Item -LiteralPath $env:ComSpec -Destination (Join-Path $game 'KSP_x64.exe')
 Copy-Item -LiteralPath 'C:\SteamLibrary\steamapps\common\Kerbal Space Program\GameData\LunaMultiplayer\Plugins\LmpClient.dll' -Destination $lmp
+[xml]$releaseDescriptor=Get-Content -LiteralPath (Join-Path $build 'friends.xml') -Raw
+if ($releaseDescriptor.Release.ReusableFleet -eq 'true') {
+    foreach($dependency in @('MechJeb2\Plugins\MechJeb2.dll','000_Harmony\0Harmony.dll')) {
+        $target=Join-Path $game "GameData\$dependency"; New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null
+        Copy-Item -LiteralPath (Join-Path 'C:\SteamLibrary\steamapps\common\Kerbal Space Program\GameData' $dependency) -Destination $target
+    }
+    Set-Content -LiteralPath (Join-Path $game 'GameData\ModuleManager.4.2.3.dll') -Value 'presence fixture'
+}
 Set-Content -LiteralPath (Join-Path $game 'buildID64.txt') -Value 'build id = 03190'
 Set-Content -LiteralPath (Join-Path $mod 'Settings.xml') -Value 'user settings preserved exactly' -Encoding Unicode
 Set-Content -LiteralPath (Join-Path $mod 'local-note.txt') -Value 'keep extra files'
 Set-Content -LiteralPath (Join-Path $game 'persistent-sentinel.sfs') -Value 'save progress'
 $settingsHash=(Get-FileHash -LiteralPath (Join-Path $mod 'Settings.xml')).Hash
 $helper=Join-Path $build 'package\GameData\RailgunLogistics\Updater\ApplyUpdate.exe'
+if ($HelperPath) { $helper=(Resolve-Path -LiteralPath $HelperPath).Path }
 $job=Join-Path $lab 'job-good'; New-Item -ItemType Directory -Path $job | Out-Null
 Copy-Item -LiteralPath (Join-Path $build 'friends.xml') -Destination (Join-Path $job 'release.xml')
 Copy-Item -LiteralPath (Join-Path $build "RailgunLogistics-Update-$BundleVersion.zip") -Destination (Join-Path $job 'client.zip')

@@ -1,73 +1,79 @@
-# Reusable railgun development prototype
+# Reusable railgun sandbox
 
-This is the separate **single-player development prototype**, including the Frutiger Aero delivery menu and physically interchangeable docking connectors. It is not the multiplayer mod in the 0.2.3 release, and is not distributed through the Friends auto-update channel.
+This contains the KSP physical-flight prototype and its new Luna shared-fleet integration. The friends build compiles these sources into `RailgunLogistics.dll`; the separate `RailgunSandbox.dll` remains a development-only build and must not be installed alongside the integrated DLL. An updater bridge migrates older friends clients to the approved reusable-fleet alpha.
 
-## Current features
+## Luna integration status
 
-- A glossy aqua flight menu with a globe emblem, Segoe UI, green availability badges and a single delivery action.
-- **Destination → Supplies → Delivery pod**: select a ship, choose its actual docking port, enter cargo or use **Fill available**, then select one of two persistent pods.
-- Pod status cards, Watch controls, collapsible flight details and a compact header. The main action remains visible while the content scrolls on shorter displays.
-- Clear disabled states for invalid amounts, full receivers, unavailable pods, unsupported routes and a port already assigned to another delivery.
-- Actual stock Junior, standard or Sr. connector fitting, including tested TweakScale resizing. The fitting uses native models, colliders and modules, preserving the existing pod and all its part IDs.
-- Isolated delivery cargo and a persistent two-pod fleet. Lost or stranded pods are not silently replaced or made available by waiting.
+The server persists exactly two fleet identities in `Universe/RailgunReusable/Fleet.xml`. Reservations, native vessel ownership, per-pod revisions, renewable pilot leases, physical docking receipts and home-pad return checks are enforced by the server. Network state and unacknowledged updates survive native scene changes. Background update locks are released cooperatively when another pilot receives a pod; active control locks are retained. A docked receiver owner can take over unloading, with the original dispatching player retained for the return handoff.
 
-## Important limits
+Both real clients have joined the isolated Luna server and observed the same fleet. Native tests have created and persisted both 29-part pods, fitted the actual selected Junior connector, and flown through rail launch, powered ascent and stable orbit. The packaged client also rejoined and resumed the same pod in rendezvous. Full consecutive multiplayer docking, delivery and return acceptance is still pending. A native interrupted staging test destroyed its airborne pod after reconnect; the shared fleet retained that loss rather than replacing it. This is not yet an unattended service.
 
-This prototype is for engineering tests in a separate save. It is **not ready for unattended deliveries**.
+The current multiplayer flight slice requires the same Luna subspace, 1x time, KSP 1.12.5 build 3190, Luna 0.29.2, ModuleManager, MechJeb 2.14.3 and Harmony 2.2.1. Only stable Kerbin-orbit receivers are implemented. Interplanetary delivery and server-side powered flight while all controlling clients are offline remain outside this build.
 
-- Dispatch currently supports independent receivers in stable **Kerbin orbit**. Minmus, other bodies and surface deliveries are not implemented.
-- One pod can have foreground flight control at a time. Unattended background powered flight is unfinished.
-- Travel uses KSP universal time at 1x while the simulation runs. Pausing or closing the game does not advance deliveries.
-- Full delivery, undocking, powered return, landing and reuse with the current assembly still require complete sequence validation. Pad stability has had failures in earlier fixtures.
-- The rail-only launch experiment is paused. Ordinary prototype dispatch retains the earlier vertical rail assist and powered ascent. A pure rail-only orbital launch is not established.
-- Shielded, gendered, indexed and other unsupported docking hardware is rejected explicitly.
-- The Friends multiplayer channel and released client/server protocol are unchanged.
+The updater migration first installs a compatible updater using the unchanged classic gameplay DLL. That updater follows a separate reusable-fleet channel and checks dependencies before staging the integrated client. Existing helpers can apply the bridge package without expanding their file permissions. The full payload still uses only the existing mod's `Plugins`, `Parts` and `Updater` paths. A release source commit or a draft release does not update either player's game.
 
-## Requirements and build
+## Delivery menu
 
-Use Windows, the .NET 8 SDK, your own KSP 1.12.5 build 3190 installation, ModuleManager, MechJeb 2.14.3 and Harmony (`GameData/000_Harmony/0Harmony.dll`). The project references your installed game and mod assemblies; those assemblies and stock assets are not included here.
+The native flight menu uses a Frutiger Aero theme: glossy aqua framing, a globe emblem, pale glass cards, green availability badges and a single green delivery button. Follow **Destination → Supplies → Delivery pod**. Choose a ship, pick its actual docking port, enter the supply amount or use **Fill available**, then select one of the two pods. The menu explains unavailable routes, invalid amounts and ports already assigned to a delivery before enabling dispatch.
 
-From the repository root:
+Each pod has its own status and **Watch pod** control. **Flight details** expands the underlying mission information; the header's minus button collapses the window to a small bar. The content area scrolls on shorter displays while the delivery action remains visible. Editing the amount retains the ship-control input lock until the field loses focus. These presentation changes retain the existing flight, cargo and connector-fitting rules, including the current Kerbin-orbit route restriction.
 
-```powershell
-.\sandbox\Build-Sandbox.ps1 -KspRoot 'D:\Games\Kerbal Space Program'
-```
+The isolated `-railgun-porttest` fixture accepts `ui-preview:default`, `ui-preview:ports`, `ui-preview:destinations`, `ui-preview:details`, `ui-preview:invalid`, `ui-preview:compact` and `ui-preview:collapsed` for visual checks without dispatching a pod. These commands are unavailable in the ordinary save.
 
-The script builds the addon, runs the independent checks and stages **only** `sandbox/staged/GameData/RailgunSandbox`. It does not install or launch KSP. The code uses the installed KSP/Unity APIs and MechJeb; this is a native game addon, not a browser overlay.
+## Request delivery at a docking port
 
-## Manual engineering setup
+In the reusable sandbox, right-click the exact receiving docking port and choose **Request pod delivery here**. The delivery panel retains that ship and part ID. Choose cargo/quantity and dispatch an available pod. Watching another vessel does not silently select another receiver; an occupied, closed, unloaded or missing selected port disables dispatch until the user selects another port.
 
-1. Back up your saves and close KSP. Use a separate local KSP setup, not a Luna/shared save.
-2. Copy the staged `RailgunSandbox` folder into that setup's `GameData` folder.
-3. Create your own new single-player sandbox named exactly **Railgun-Reusable-Sandbox**. The controller activates only in this named save and the explicit development test saves.
-4. Enter flight, open the prototype menu and use **Set up depot** to create its two original physical pods. Let their initial placement settle.
-5. Use your own receiving vessel in stable Kerbin orbit, with a supported free docking port and unlocked cargo capacity. Select that vessel/port in the menu or right-click its port and choose **Request pod delivery here**.
+Before departure, the pod receives the **actual matching stock Junior / standard / Sr. docking-port part**, including its native model, colliders, mass and modules. Dispatch captures the clicked receiver's stock hardware, TweakScale settings and stock variant rather than changing a standard connector's compatibility label. The exact native interface is still read from the live receiver: the resized Junior fixture uses `size1p5` instead of its prefab's `size0`.
 
-The private developer installer and prepared saves are intentionally not included. Building the source does not recreate the developer's station, saved missions or test fixtures. Keep the part definitions installed while a save contains the prototype's custom guidance/cargo parts.
+The fitting replaces only the connector leaf in the parked, unloaded native vessel snapshot. The same two pods, vessel IDs, all 29 part IDs, propulsion fuel and exact destination are retained. KSP instantiates the selected part when the pod is loaded. Before launch, the addon checks its actual part name, native docking interface, mounting position, model scale and free state; a mismatch holds departure. The fitting survives reload independently of the receiver being loaded. Existing in-flight orders retain their previous hardware. Gendered, indexed, shielded and other unsupported connector designs are rejected explicitly.
 
-## Verification
+The paused rail-only ascent is restricted to its explicit experimental test save. Ordinary reusable-sandbox dispatch uses the previous vertical rail assist and powered ascent. The GitHub logistics package and Luna server are separate from this local sandbox change.
 
-The current source passes **122 independent checks**. Native KSP checks additionally verified:
+`-railgun-porttest` selects a separate `Railgun-Port-Selection-Test` fixture where launch force is disabled and Reserved stops after physical fitting and cargo configuration. `port-menu-selftest` exercises native port menu events; the older `port-coupler-selftest` checks compatibility metadata only. `port-hardware-check` verifies native meshes, colliders, mounting gap, identity and the selected fitting. `port-test-release` releases only an unlaunched isolated test order without delivery, return or refuel credit; it is unavailable in the ordinary sandbox.
 
-- Physical Sr., resized Junior, unscaled Junior and standard connector fitting; resized fitting persisted through restart.
-- Native model scale, colliders and mounting, with measured mounting gaps below 0.4 mm in these fixtures.
-- The same two vessel identities, all 29 part IDs and unchanged propulsion fuel through the fitting tests.
-- Menu collapse/reopen, actual port selection, resource selection, cargo typing, fill-to-capacity, pod selection and disabled states. Default and compact layouts were visually inspected without GUI layout exceptions.
+The build passes 122 automated checks. Native tests verified actual Sr., resized Junior, unscaled Junior and standard fittings, plus restart persistence of the resized fitting. Mounting gaps were below 0.4 mm, all 29 part IDs and propulsion fuel were retained, and native Junior/standard/resized screenshots were inspected. Private evidence and the save audit are in `D:\GAMES\KSP-Railgun-Previews\port-hardware-20261027\validation.json`. These checks establish physical fitting and reload behavior; physical docking across sizes and a complete delivery flight with the new hardware remain untested. The ordinary user's sandbox save was not rewound or changed by these fixture tests.
 
-Those checks do not establish a complete delivery/return flight, cross-size docking, multiplayer or interplanetary operation. Native captures, saves, workstation paths, decompiled API references and private fixture tooling are excluded from this repository.
+## Rail-only ascent revision — October 27
 
-## Developer controls
+The paused `-railgun-railonly` experiment uses an angled electromagnetic guide, followed by an unpowered coast and a separate native MechJeb circularization maneuver. Its rocket-ascent autopilot is not started. Main engines and RCS are interlocked off during loading, rail acceleration and coast. Launch force is restricted to the guide and ends at the muzzle; there is no trajectory/velocity insertion after release.
 
-Write one command at a time into the current test save's `RailgunSandbox.command`. Commands are consumed and deleted; deletion alone is not completion acknowledgement. Inspect `RailgunSandbox.status.txt` and native state afterward.
+The current engineering candidate has a **40 km guide at 35 degrees**, targeting a **2,400 m/s** muzzle speed. This is a substantial facility expansion from the old 100 m launch assist. A native circularization plan is admitted only above the atmosphere, with a maximum **800 m/s** correction. Engines unlock near apoapsis according to the finite-burn duration estimate. A missed/insufficient launch is marked stranded instead of silently enabling rocket ascent. Normal docking/return propulsion is separate and unchanged.
 
-General controls include `prepare`, `watch1`, `watch2`, `receiver`, `select-port:<part ID>`, `dispatch1`, `dispatch2`, `snapshot`, `inspect`, `pause-follow` and `save-and-exit`. Dispatch uses the selected receiving port and currently configured cargo. It never substitutes a different port when the saved selection is unavailable.
+The first 4 km / 20-degree / 2,700 m/s candidate failed natively: it reached 2,213 m/s with engines/RCS off and unchanged LF/Ox, but structural parts were destroyed before muzzle departure. The 40 km candidate also failed: its exposed RTG exceeded its temperature limit near 12 km altitude / 1,480 m/s, followed by the docking port. Neither establishes orbital launch. Work is paused at the user's request; a stock protective fairing was researched but not implemented. Existing powered-orbit and re-entry evidence below predates this launch change.
 
-`-railgun-porttest` selects the separate `Railgun-Port-Selection-Test` fixture. Launch force is disabled and reserved orders stop after actual hardware/cargo fitting. The source supports this fixture but does not include a prepared save. In that fixture, `port-hardware-check` tests native meshes, colliders, mounting and identity; `port-test-release` releases only an unlaunched test reservation without flight or delivery credit. The older `port-coupler-selftest` tests compatibility metadata only.
+`-railgun-railonly` loads the separate `Railgun-RailOnly-Test` engineering save. That save stops owned guidance on reaching the Rendezvous phase so the achieved orbit can be inspected before any rendezvous burn. It does not reset or respawn pods in the normal sandbox. `RailLaunchEvidence.tsv` records native rail position, speed, thrust, fuel, RCS, timestep, original assembly size, temperature margin and dynamic pressure. Private evidence is under `D:\GAMES\KSP-Railgun-Previews\rail-only-20261027`.
 
-Test-only UI views: `ui-preview:default`, `ui-preview:ports`, `ui-preview:destinations`, `ui-preview:details`, `ui-preview:invalid`, `ui-preview:compact` and `ui-preview:collapsed`. They do not dispatch a pod and are unavailable in the ordinary save.
+## Current boundary
 
-## Persistence and credits
+The native scene has a launch facility and two persistent stock-part rockets. The first rocket physically left the rails and flew under its own engine, with delivery cargo isolated from propulsion. That first vehicle exhausted its propulsion before reaching orbit and was destroyed. It did not deliver cargo.
 
-Back up `persistent.sfs` and `RailgunReusableFleet.xml` together. Restoring only one can mismatch mission history and physical vessels. Do not reset an order ledger to recover a lost pod.
+The Mk II assembly replaces its three FL-T800 tanks and Swivel with a stock adapter, two Jumbo-64 tanks and a Mainsail. Native testing reached a stable 111.99 x 112.11 km Kerbin orbit, with all 25 parts intact, 100 locked MonoPropellant cargo, and propulsion left. It entered rendezvous planning. Native docking/delivery, undocking, powered landing and reuse still require complete flight verification. Automated checks do not establish those results.
 
-Original code, facility geometry, globe and menu textures are AI-assisted work for Kgeg4 with OpenAI Codex (GPT-6.1), under the repository's MIT license. Fonts come from Windows at runtime. Stock pod meshes and colliders come from the player's installed KSP parts. MechJeb, Harmony and ModuleManager remain separate dependencies; no game binaries, models or third-party mod binaries are redistributed.
+That orbital flight survived a native save/reload, preserving its parts and cargo. The parked second Mk II pod became unstable and broke apart on its landing legs during reload validation. Pad support/ground stability remains an open defect. Damage guards now compare original part IDs, including unloaded native snapshots, before dispatch; the fleet is not yet ready for unattended use.
+
+Only a receiving ship in a stable Kerbin orbit is supported in this slice. One pod can have foreground flight control at a time; the second reservation waits. Interplanetary planning and unattended background powered flight remain unfinished. Flight uses KSP universal time at 1x while the simulation runs; closing or pausing the game does not advance deliveries.
+
+## Build and local install
+
+Run `Build-Sandbox.ps1`, then close KSP and run `Install-Sandbox.ps1`. The installer checks the staged source/DLL hashes and backs up the sandbox addon and its isolated save. It does not install game assets or change the Luna server.
+
+The addon activates in the `Railgun-Reusable-Sandbox` sandbox save. An explicit `-railgun-demo` launch selects a separate `Railgun-Reusable-Demo` capture save instead. Normal saves do not activate this scene/controller. Native parts and the installed MechJeb 2.14.3 are required. The launcher model is original procedural artwork; pod meshes are loaded from installed KSP parts.
+
+## Native test controls
+
+The in-game panel can prepare the two original pods, watch one, and dispatch to a selected receiver's available standard docking port. Each pod must finish its initial construction placement before dispatch. A lost or stranded pod is not a new ready slot. No automatic replacement is generated.
+
+For development without desktop input, write one command into the save's `RailgunSandbox.command` file. Commands are consumed and deleted: `prepare`, `watch1`, `watch2`, `receiver`, `dispatch1`, `dispatch2`, `snapshot`, `inspect`, `save-and-exit`, `pause-follow`.
+
+`dispatch1`/`dispatch2` send 100 MonoPropellant to an available standard port on the active receiver. `RailgunSandbox.status.txt` reports actual native state and separates propulsion from cargo. `inspect` requires both pods loaded and creates offscreen scene images with additional inspection lighting; those images are not gameplay footage.
+
+`showcase-wide`, `showcase-pod`, `showcase-flight` and `showcase-orbit` hide the interface and frame the real native cameras for recording. `showcase-ui` restores the interface. These commands change presentation only. The October 25 native flight video is saved under `D:\GAMES\KSP-Railgun-Previews\2026-10-25`: a 69-second captioned demo, a chat-sized copy, and the full uninterrupted native capture with process-only game audio. The video ends at stable orbit and does not demonstrate re-entry, docking or recovery.
+
+## Persistence and failure
+
+Keep `persistent.sfs` and `RailgunReusableFleet.xml` together when backing up or restoring. Native part IDs, cargo tanks and the transfer receipt are checked against the two stable fleet identities. Do not restore only one file of the pair.
+
+Propulsion exhaustion during ascent, rendezvous or landing marks a pod stranded and stops its automatic flight control. It remains unavailable. Physical destruction marks it lost. A time delay or reload cannot release either slot.
+
+Development fixture rewinds, when explicitly recorded, are engineering test resets rather than gameplay recovery. Captures, native saves, decompiled API evidence, fixture tooling and binaries stay under ignored `evidence/`, `staged/`, `bin/` and `obj/` directories.

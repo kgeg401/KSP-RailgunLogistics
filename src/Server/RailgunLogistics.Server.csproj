@@ -1,8 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net6.0</TargetFramework><AssemblyName>RailgunLogistics.Server</AssemblyName></PropertyGroup>
+  <PropertyGroup><TargetFramework>net6.0</TargetFramework><AssemblyName>RailgunLogistics.Server</AssemblyName><Version>0.3.0</Version></PropertyGroup>
   <ItemGroup>
     <Reference Include="Server"><HintPath>$(LunaRoot)\Server.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="LunaConfigNode"><HintPath>$(LunaRoot)\LunaConfigNode.dll</HintPath><Private>false</Private></Reference>
     <Compile Include="..\Core.cs" Link="Core.cs"/><Compile Include="*.cs"/>
+    <Compile Include="..\..\sandbox\SharedFleet.cs" Link="SharedFleet.cs"/>
+    <Compile Include="..\..\sandbox\FlightFleet.cs" Link="FlightFleet.cs"/>
+    <Compile Include="..\..\sandbox\DockingPortPolicy.cs" Link="DockingPortPolicy.cs"/>
   </ItemGroup>
 </Project>

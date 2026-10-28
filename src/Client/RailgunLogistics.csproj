@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net472</TargetFramework><AssemblyName>RailgunLogistics</AssemblyName></PropertyGroup>
+  <PropertyGroup><TargetFramework>net472</TargetFramework><AssemblyName>RailgunLogistics</AssemblyName><Version>0.3.0</Version></PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
     <Reference Include="Assembly-CSharp"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
@@ -11,6 +11,11 @@
     <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AnimationModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="LmpClient"><HintPath>$(KspRoot)\GameData\LunaMultiplayer\Plugins\LmpClient.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="MechJeb2"><HintPath>$(KspRoot)\GameData\MechJeb2\Plugins\MechJeb2.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(KspRoot)\GameData\000_Harmony\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Compile Include="..\Core.cs" Link="Core.cs"/><Compile Include="*.cs"/>
+    <Compile Include="..\..\sandbox\*.cs" Exclude="..\..\sandbox\MultiplayerValidation.cs" Link="Reusable\%(Filename)%(Extension)"/>
+    <Compile Include="..\..\sandbox\MultiplayerValidation.cs" Condition="'$(RailgunValidation)'=='true'" Link="Reusable\MultiplayerValidation.cs"/>
   </ItemGroup>
 </Project>

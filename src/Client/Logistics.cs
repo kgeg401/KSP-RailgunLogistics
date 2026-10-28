@@ -54,7 +54,12 @@ namespace RailgunLogistics
         bool Multiplayer=>Connected || HighLogic.SaveFolder=="LunaMultiplayer";
         long Now=>Connected && serviceReady?serverTime+(long)(Time.realtimeSinceStartup-serverStamp):Rules.Now;
         string Player=>Connected?SettingsSystem.CurrentSettings.PlayerName:"Commander";
-        public void Open(){visible=true;}
+        public void Open()
+        {
+            if(RailgunSandbox.SandboxFlight.Instance!=null) { RailgunSandbox.SandboxFlight.Instance.OpenMenu(); visible=false; return; }
+            if(HighLogic.SaveFolder=="LunaMultiplayer") { ScreenMessages.PostScreenMessage("Enter flight and wait for the shared two-pod depot to synchronize.",6,ScreenMessageStyle.UPPER_CENTER); return; }
+            visible=true;
+        }
         void Awake()
         {
             if(Instance!=null){Destroy(this);return;}
@@ -72,7 +77,7 @@ namespace RailgunLogistics
                 pixels[y*38+x]=(x>=10&&x<=13 || x>=25&&x<=28) && y>4 && y<33?new Color(.25f,.8f,1):new Color(.03f,.08f,.13f,1);
             for(int y=13;y<27;y++)for(int x=17;x<22;x++)pixels[y*38+x]=Color.white;
             icon.SetPixels(pixels);icon.Apply();
-            button=ApplicationLauncher.Instance.AddModApplication(()=>visible=true,()=>visible=false,null,null,null,null,
+            button=ApplicationLauncher.Instance.AddModApplication(Open,()=>visible=false,null,null,null,null,
                 ApplicationLauncher.AppScenes.FLIGHT|ApplicationLauncher.AppScenes.SPACECENTER|ApplicationLauncher.AppScenes.TRACKSTATION,icon);
         }
         void OnDestroy()

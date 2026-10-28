@@ -16,6 +16,7 @@ Copy-Item -LiteralPath (Join-Path $projectRoot 'GameData\RailgunLogistics\Railgu
 New-Item -ItemType Directory -Path (Join-Path $clientFolder 'Parts'),(Join-Path $clientFolder 'Plugins') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $projectRoot 'GameData\RailgunLogistics\Parts\KerbinRailgun.cfg') -Destination (Join-Path $clientFolder 'Parts') -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'GameData\RailgunLogistics\Parts\CargoPod.cfg') -Destination (Join-Path $clientFolder 'Parts') -Force
+Copy-Item -LiteralPath (Join-Path $projectRoot 'sandbox\GameData\RailgunSandbox\ReusableParts.cfg') -Destination (Join-Path $clientFolder 'Parts') -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'src\Client\bin\Release\net472\RailgunLogistics.dll') -Destination (Join-Path $clientFolder 'Plugins') -Force
 Copy-Item -LiteralPath (Join-Path $projectRoot 'src\Server\bin\Release\net6.0\RailgunLogistics.Server.dll') -Destination $serverFolder -Force
 foreach ($document in @('README.md','Install.ps1','LICENSE','CHANGELOG.md')) {

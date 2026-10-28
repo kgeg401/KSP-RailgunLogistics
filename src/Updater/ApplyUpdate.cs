@@ -36,6 +36,7 @@ namespace RailgunLogistics.Updates
                     File.WriteAllText(log,"Waiting for KSP to close.");
                     while(GameRunning(Path.Combine(root,"KSP_x64.exe"))) Thread.Sleep(1000);
                     var release=Release.Read(Path.Combine(job,"release.xml"));
+                    release.CheckRequirements(root);
                     string verified=Path.Combine(job,"verified-"+Guid.NewGuid().ToString("N"));
                     release.ExtractVerified(Path.Combine(job,"client.zip"),verified);
                     string target=Path.Combine(root,"GameData/RailgunLogistics"); Release.NoLinks(target);

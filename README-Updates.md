@@ -1,27 +1,33 @@
-# Railgun Logistics: copy into GameData
+# Railgun Logistics client updates
 
-Download **RailgunLogistics-0.2.3.zip** from the GitHub release. Close KSP, unzip it, and copy the included **RailgunLogistics** folder into your existing **Kerbal Space Program/GameData** folder. The result should be `GameData/RailgunLogistics/Plugins/RailgunLogistics.dll`, with the `Parts` and `Updater` folders alongside `Plugins`. Copy the entire mod folder, not just its DLL. If our mod is already present, back up that folder first and merge the new folder into it. Keep your existing Settings.xml if you changed the default delivery timings.
+The reusable-pod client is the **0.3.0 multiplayer alpha**. It combines the physical-flight prototype with the existing mod and its updater. The older 0.2.3 assisted-docking download remains available separately. Check the release page and the pinned Friends channel for what has actually been published; a source commit or draft does not update a player.
 
-That is the whole installation. **No installer, launcher, new multiplayer client, or GitHub login.** Keep your existing KSP, Luna Multiplayer, ModuleManager, saves, and other mods. Requirements: Windows, KSP 1.12.5 build 3190, Luna Multiplayer 0.29.2, and ModuleManager.
+## Requirements and first installation
 
-Start KSP normally, including through Steam. At the main menu, our mod checks the public Friends update channel. Approved updates download automatically in the background. If an update is ready, KSP shows a notice: quit normally, wait a few seconds, then reopen KSP. Our bundled background helper applies the update after the game closes because KSP cannot reload running DLLs. You never need to run the helper yourself. Downloads are checked before staging; every ZIP entry and file hash is checked again before installation. The mod automatically backs up replaced files and preserves settings/extras, saves, server data, and other mods. It does not close KSP, install software into Windows, or restart/update the server.
+Use Windows, KSP 1.12.5 build 3190, Luna Multiplayer 0.29.2, ModuleManager, MechJeb 2.14.3 and Harmony 2.2.1 from the shared server's mod pack. This small download contains our mod, not the game or third-party mod pack.
 
-The mod ZIP is approximately 50 KB. `RailgunLogistics-Update-0.2.3.zip` is the internal updater payload; download the ordinary **RailgunLogistics-0.2.3.zip** for initial use. GitHub's **Code / Download ZIP** is source code, not the playable mod download.
+Close KSP, extract the ordinary **RailgunLogistics-0.3.0.zip**, and copy its **GameData/RailgunLogistics** folder into your game's GameData folder. Back up an existing copy first and preserve your Settings.xml. Copy the entire folder, including Parts and Updater. Keep your existing Luna client, saves and other mods. An older separate development addon at GameData/RailgunSandbox must be backed up outside GameData before installing the integrated client, or duplicate game modules would load.
 
-If GitHub is unavailable, the installed mod stays usable. Diagnostics/downloads are in `RailgunLogistics-Updates` beside GameData. Each job's `result.txt` records installation or failure. Backups are in `RailgunLogistics-Backups/autoupdate-*`. To opt out, create an empty `GameData/RailgunLogistics/DisableAutoUpdates.txt`. To roll back, close KSP and restore only the mod backup folder; startup returns to the pinned release unless updates are disabled.
+Players do not run an installer, a command, or ApplyUpdate.exe. GitHub's **Code / Download ZIP** contains source rather than the playable mod. The ZIP named **RailgunLogistics-Update-0.3.0.zip** is the updater's internal payload, not the first-install download.
 
-## Host release procedure
+## Updating an existing 0.2.3 client
 
-The mod reads `channel/friends.xml` on this repository's main branch. The descriptor pins a versioned GitHub release ZIP, its SHA-256, supported KSP/Luna versions, and hashes for each mod file. It follows the host-approved channel rather than blindly following the latest release. Trust is control of this GitHub repository over HTTPS, not separate code signing. Never publish credentials, game assemblies, third-party mod packs, saves, or the server Universe.
+Start KSP normally. The older updater reads **channel/friends.xml**, which installs the **0.2.5 updater bridge** while retaining the classic gameplay DLL. Follow its notice: quit normally, wait for the background helper, then start KSP again.
 
-`Build-Updates.ps1` builds the updater/helper and creates the normal GameData mod ZIP and automatic update payload. It currently reuses the tested 0.2.0 gameplay package byte-for-byte: only the bundled updater changed. Gameplay/server protocol remains 0.2.0/v2, so this server needs no restart. To release future gameplay changes, first point the build at the new tested gameplay payload and bump the version. For server-dependent changes, install/restart/verify the matching server and required mod DLL hash, then promote the Friends descriptor. A draft alone updates nobody's mod.
+The newer updater reads **channel/reusable.xml**. It checks the required mod versions and downloads the integrated 0.3.0 client. Follow that second notice and quit/reopen once more. This one-time migration takes two update cycles; later compatible updates use the ordinary single cycle. The Luna host requires the matching gameplay DLL, so finish the client update before joining.
 
-`Publish-Updates.ps1 -ServerPath '<your Luna server directory>'` previews compatibility checks. Add `-Publish` after approving publication. It verifies the running host's required gameplay hash and uploaded release hashes before promoting the descriptor. Publishing credentials stay on the host and are never bundled. Players do not run PowerShell scripts.
+Missing or incompatible dependencies leave the installed client unchanged and produce a message. Install the shared server's required mod pack, then start KSP again. Updates download at the main menu and apply only after that game instance closes. The helper preserves settings and extra files, keeps backups outside GameData, verifies every archive entry and file hash, and does not stop KSP, replace Luna, alter saves or update the server.
 
-For reproducing the existing gameplay bundle, obtain `RailgunLogistics-0.2.0.zip` from the older release's assets and place it in the source root. Build against your own KSP/Luna references. Source excludes private logs, recordings, sandbox experiments, game references, saves, and backups.
+## What the alpha implements
 
-## Credits and verification
+The server owns two persistent physical pods. The native delivery menu selects an exact receiver port and fits the corresponding stock Junior, standard or Sr. connector before departure. Flight code covers rail-assisted launch, powered ascent, rendezvous, stock docking, cargo transfer, undocking and powered home-pad recovery/refit. A pod is unavailable until its return is accepted; losses do not generate replacements. Both clients share reservations and flight state through Luna.
 
-Original mod/updater code developed for Kgeg4 with OpenAI Codex (GPT-6.1); MIT license. Uses the installed KSP/Unity APIs, .NET Framework, Luna, ModuleManager, and stock assets on your PC.
+Native two-client testing has demonstrated shared fleet state, ownership handoff, actual connector fitting, rail launch, powered ascent and stable orbit. A complete consecutive multiplayer docking/delivery/return cycle remains unverified. The alpha is limited to stable Kerbin-orbit receivers, one foreground guided flight, the same Luna subspace and 1x time. It does not implement Minmus/interplanetary routing or server-side powered flight while its controlling clients are offline. Keep a matching Universe/fleet backup before testing.
 
-26 updater checks cover archive/file integrity and malicious/invalid manifests. Windows integration checks process waiting, after-exit application, backups, preserved settings/extras/save sentinel, and corrupt-update refusal. Native KSP checks are required in addition to .NET build tests: KSP's bundled Mono lacks System.Xml.Linq and System.IO.Compression; the in-game updater uses System.Xml and leaves archive extraction to its automatically invoked Windows helper.
+## Host publishing and diagnostics
+
+The host installs the matching server plugin and mod-control entries while stopped, then restarts and verifies it before promoting either update channel. **Publish-Reusable.ps1** verifies the running host, both payloads and GitHub asset digests, and promotes both descriptors in one commit. A partial upload leaves the previous channels in place. Older clients receive only the compatible bridge, not a payload their old helper cannot preflight.
+
+Update diagnostics are in **RailgunLogistics-Updates** beside GameData; each job has a result.txt. Backups are in **RailgunLogistics-Backups/autoupdate-***. To opt out, create **GameData/RailgunLogistics/DisableAutoUpdates.txt**. To roll back, close KSP and restore the mod backup with updates disabled. Server fleet state lives in **Universe/RailgunReusable/Fleet.xml** and must stay paired with its native vessel universe.
+
+Original mod and updater code developed for Kgeg4 with OpenAI Codex; MIT license. Uses the player's installed KSP/Unity, Luna, ModuleManager, MechJeb and Harmony. No Squad assets, private saves, server credentials or decompiled game code are distributed.

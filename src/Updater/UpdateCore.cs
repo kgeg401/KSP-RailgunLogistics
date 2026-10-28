@@ -15,9 +15,12 @@ namespace RailgunLogistics.Updates
     public sealed class Release
     {
         public string Version, Url, Sha256;
+        public bool ReusableFleet;
         public readonly Dictionary<string,string> Files = new Dictionary<string,string>(StringComparer.OrdinalIgnoreCase);
         public const string Repository = "kgeg401/KSP-RailgunLogistics";
-        public const string Channel = "https://raw.githubusercontent.com/" + Repository + "/main/channel/friends.xml";
+        // Older installed updaters keep following friends.xml. That channel first
+        // installs this updater with the unchanged classic gameplay binary.
+        public const string Channel = "https://raw.githubusercontent.com/" + Repository + "/main/channel/reusable.xml";
         public const int MaxDownload = 30 * 1024 * 1024;
         public static string Hash(string path) { using(var s=File.OpenRead(path)) using(var h=SHA256.Create()) return BitConverter.ToString(h.ComputeHash(s)).Replace("-", "").ToLowerInvariant(); }
         public static bool Hex(string s) => s != null && Regex.IsMatch(s, "\\A[0-9a-fA-F]{64}\\z");
@@ -36,6 +39,9 @@ namespace RailgunLogistics.Updates
             var root=doc.DocumentElement;
             if(root==null || root.Name!="Release" || root.GetAttribute("KspBuild")!="3190" || root.GetAttribute("LunaVersion")!="0.29.2.0") throw new InvalidDataException("Unsupported release/game version.");
             var release=new Release { Version=root.GetAttribute("Version"), Url=root.GetAttribute("PackageUrl"), Sha256=root.GetAttribute("Sha256") };
+            string fleet=root.GetAttribute("ReusableFleet");
+            if(fleet!="" && fleet!="true") throw new InvalidDataException("Unsupported fleet release requirement.");
+            release.ReusableFleet=fleet=="true";
             System.Version parsed;
             if(!System.Version.TryParse(release.Version,out parsed) || !Hex(release.Sha256)) throw new InvalidDataException("Invalid release identity.");
             Uri uri;
@@ -50,10 +56,26 @@ namespace RailgunLogistics.Updates
             }
             foreach(var required in new[]{"Plugins/RailgunLogistics.dll","Parts/CargoPod.cfg","Updater/RailgunLogistics.Updater.dll","Updater/ApplyUpdate.exe"})
                 if(!release.Files.ContainsKey(required)) throw new InvalidDataException("Incomplete client release.");
+            if(release.ReusableFleet && !release.Files.ContainsKey("Parts/ReusableParts.cfg")) throw new InvalidDataException("Reusable pod definitions are missing.");
             if(release.Files.Count>100) throw new InvalidDataException("Too many files.");
             return release;
         }
         public bool Matches(string folder) => Files.All(f=>File.Exists(Path.Combine(folder,f.Key)) && string.Equals(Hash(Path.Combine(folder,f.Key)),f.Value,StringComparison.OrdinalIgnoreCase));
+        public void CheckRequirements(string root)
+        {
+            if(!ReusableFleet) return;
+            // MechJeb keeps its ABI assembly version at 2.5.1; its release
+            // identity is the separate file version (2.14.3 in this mod pack).
+            foreach(var dependency in new[]{new[]{"MechJeb2/Plugins/MechJeb2.dll","2.14.3.0","2.5.1.0"},new[]{"000_Harmony/0Harmony.dll","2.2.1.0","2.2.1.0"}}) {
+                string path=Path.Combine(root,"GameData",dependency[0]);
+                if(!File.Exists(path) || System.Reflection.AssemblyName.GetAssemblyName(path).Version.ToString()!=dependency[2] ||
+                    System.Diagnostics.FileVersionInfo.GetVersionInfo(path).FileVersion!=dependency[1])
+                    throw new InvalidDataException("The reusable pods require "+dependency[0]+" version "+dependency[1]+" from the shared server's mod pack. The existing mod is retained.");
+            }
+            if(!Directory.GetFiles(Path.Combine(root,"GameData"),"ModuleManager*.dll").Any()) throw new InvalidDataException("ModuleManager is required for reusable pod parts.");
+            if(File.Exists(Path.Combine(root,"GameData/RailgunSandbox/Plugins/RailgunSandbox.dll")))
+                throw new InvalidDataException("An older separate RailgunSandbox prototype is installed. Back it up outside GameData before installing the integrated reusable pods.");
+        }
 #if !KSP_UPDATER
         public void ExtractVerified(string zipPath,string destination)
         {
