@@ -41,6 +41,7 @@ namespace RailgunSandbox
             timeToAp >= -10 && timeToAp <= Math.Max(12, halfBurnTime + 5);
 
         public static bool EnginesLocked(PodRecord p) => p.Phase == FlightPhase.Reserved || p.Phase == FlightPhase.RailLaunch ||
-            p.Phase == FlightPhase.Ascent && p.RailOnlyAscent && !p.CircularizationStarted;
+            p.Phase == FlightPhase.Ascent && (p.RailOnlyAscent && !p.CircularizationStarted ||
+                p.LaunchShellRequired && (!p.LaunchShellPanelsReleased || !p.LaunchShellBaseReleased || p.LaunchShellClearAt < 0));
     }
 }

@@ -15,7 +15,7 @@ var fleet = SharedFleet.New();
 foreach (var slot in fleet.Slots) { slot.Pod.Created = true; slot.Pod.PartIds.AddRange(new uint[] { (uint)(slot.Pod.Number * 10 + 1), (uint)(slot.Pod.Number * 10 + 2) }); slot.Pod.OwnPort = slot.Pod.PartIds[0]; slot.Pod.OriginalParts = 2; }
 SharedFleet disk = null;
 var authority = new FleetAuthority(fleet, state => disk = state);
-var facts = new FleetFacts { Subspace = 2, ReceiverOwned = true, ReceiverReady = true, PodOnPad = true, PodSnapshotVerified = true, OwnsPodUpdate = true };
+var facts = new FleetFacts { Subspace = 2, ReceiverOwned = true, ReceiverReady = true, PodOnPad = true, PodSnapshotVerified = true, OwnsPodUpdate = true, PlacementSettled = true };
 FleetMessage Reserve(int number, uint port = 77) {
     var snapshot = authority.Snapshot(); var slot = snapshot.Slots.Single(s => s.Pod.Number == number);
     var proposed = FleetWire.Copy(slot.Pod);
@@ -36,7 +36,28 @@ void Advance(FlightPhase phase, double time) {
 var a = Reserve(1); facts.ReceiverOwned = false;
 Reject(() => authority.Apply("Alice", a, facts, 1000), "Unowned receiving ship cannot reserve a pod");
 Check(authority.State.Slots[0].Revision == 0 && disk == null, "Rejected request changes neither authority nor disk");
-facts.ReceiverOwned = true; var reserved = authority.Apply("Alice", a, facts, 1000);
+facts.ReceiverOwned = true; facts.PlacementSettled = false;
+Reject(() => authority.Apply("Alice", a, facts, 1000), "An unplaced native server pod cannot reserve even with a valid client manifest");
+Check(authority.State.Slots[0].Revision == 0 && disk == null, "Rejected native placement leaves the fleet and storage unchanged");
+facts.PlacementSettled = true; var reserved = authority.Apply("Alice", a, facts, 1000);
+var visualSlot=reserved.Slots[0];
+var visual=new FleetMessage {Kind="LoadingView",Epoch=reserved.Epoch,Number=1,Lease=visualSlot.Lease,
+    LoadingOrder=visualSlot.Pod.OrderId,LoadingSeconds=8,LoadingSampleUt=1008};
+var visualFacts=new FleetFacts {Subspace=2,GameTime=1008,OwnsPodUpdate=true};
+string visualBefore=FleetWire.Digest(reserved);
+Check(LoadingViewRules.Accept(reserved,"Alice",visual,visualFacts,1001),"Current native pilot can relay an ephemeral loading sample");
+foreach(var corrupt in new Action<FleetMessage>[] {
+    m=>m.Epoch=Guid.NewGuid().ToString("N"),m=>m.Lease="foreign",m=>m.LoadingOrder="old-order",
+    m=>m.LoadingSeconds=double.NaN,m=>m.LoadingSeconds=31,m=>m.LoadingSampleUt=1012,
+    m=>m.LoadingSampleUt=999,m=>m.LoadingSeconds=20,m=>m.Pod=new PodRecord()
+}) {var bad=FleetWire.Copy(visual);corrupt(bad);Check(!LoadingViewRules.Accept(reserved,"Alice",bad,visualFacts,1001),"Invalid or stale loading samples cannot relay");}
+Check(!LoadingViewRules.Accept(reserved,"Bob",visual,visualFacts,1001),"An observer cannot animate another pilot's loader");
+Check(!LoadingViewRules.Accept(reserved,"Alice",visual,visualFacts,1040),"An expired pilot lease cannot relay loading artwork");
+visualFacts.OwnsPodUpdate=false;
+Check(!LoadingViewRules.Accept(reserved,"Alice",visual,visualFacts,1001),"Loading samples still require native vessel ownership");
+Check(FleetWire.Digest(reserved)==visualBefore,"Presentation admission changes no fleet revision, state or lease");
+var visualWire=FleetWire.Decode(FleetWire.Encode(visual),FleetWire.Encode(visual).Length);
+Check(visualWire.LoadingSeconds==8&&visualWire.LoadingSampleUt==1008&&visualWire.LoadingOrder==visual.LoadingOrder,"Loading sample wire preserves its order and native clock");
 var drift = FleetWire.Copy(reserved); drift.Subspace = 1472;
 var driftFacts = new FleetFacts { Subspace = 1473, PodSnapshotVerified = true, OwnsPodUpdate = true, ForwardTimeline = true, OtherFlightPilotsAligned = true, GameTime = 2000 };
 SharedFleet driftDisk = null;
@@ -173,6 +194,7 @@ Check(oversized, "Oversized fleet packets are rejected before parsing");
 bool dtd = false; try { FleetWire.Read<FleetMessage>("<!DOCTYPE a [<!ENTITY x SYSTEM 'file:///private'>]><FleetMessage>&x;</FleetMessage>"); } catch { dtd = true; }
 Check(dtd, "External XML entities are disabled");
 var failing = new FleetAuthority(fleet, _ => throw new IOException("disk unavailable"));
+facts.PlacementSettled = true; // Reach persistence with an otherwise admissible native reservation.
 var failedRequest = FleetWire.Copy(a); failedRequest.Epoch = failing.State.Epoch;
 bool failedWrite = false; try { failing.Apply("Alice", failedRequest, facts, 1000); } catch (IOException) { failedWrite = true; }
 Check(failedWrite && failing.State.Slots[0].Revision == 0, "Failed storage never commits a volatile reservation");

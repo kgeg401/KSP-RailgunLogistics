@@ -1,0 +1,39 @@
+Native rail and loader asset audit
+schema=2
+units=metres
+clientMvid=c7177954-de3a-41c4-81b8-b9d9c8e7a0ee
+capturedUtc=2026-10-29T19:24:03.3856276Z
+steadyViewerUsesCache=True
+createdDetailChunks=14
+ownedMeshes=7
+mediumVertices=23120
+railMesh=Rail backbone / 4096 m | vertices=1156 | triangles=480 | invalid=0 | degenerate=0 | reversed=0
+railMesh=Rail backbone / 1720 m | vertices=1156 | triangles=480 | invalid=0 | degenerate=0 | reversed=0
+railMesh=Detailed accelerator bays / coils, ceramics, fasteners and services | vertices=55152 | triangles=54592 | invalid=0 | degenerate=0 | reversed=0
+railMesh=Detailed accelerator bays / coils, ceramics, fasteners and services | vertices=23120 | triangles=10048 | invalid=0 | degenerate=0 | reversed=0
+railMesh=Detailed accelerator bays / coils, ceramics, fasteners and services | vertices=41364 | triangles=40944 | invalid=0 | degenerate=0 | reversed=0
+railMesh=Detailed accelerator bays / coils, ceramics, fasteners and services | vertices=17340 | triangles=7536 | invalid=0 | degenerate=0 | reversed=0
+supportMesh=Triangulated launch trestles and bolted foundation plates | vertices=8192 | triangles=3808 | invalid=0 | degenerate=0 | reversed=0
+shellBore=3.8499999046325684
+minimumTriangleRadius=3.8499999046325684
+loaderMesh=Flanged hydraulic actuator / 3.62 / -1 | vertices=7258 | triangles=3528 | invalid=0 | degenerate=0 | reversed=0
+loaderMesh=Continuous split rail collar / 3.62 / -1 | vertices=8502 | triangles=3984 | invalid=0 | degenerate=0 | reversed=0
+loaderMesh=Aligned locking pin socket / 3.62 / -1 | vertices=2272 | triangles=1100 | invalid=0 | degenerate=0 | reversed=0
+loaderMesh=Machined driven locking pin | vertices=464 | triangles=216 | invalid=0 | degenerate=0 | reversed=0
+loaderMesh=Flanged hydraulic actuator / 3.62 / 1 | vertices=7258 | triangles=3528 | invalid=0 | degenerate=0 | reversed=0
+loaderMesh=Continuous split rail collar / 3.62 / 1 | vertices=8502 | triangles=3984 | invalid=0 | degenerate=0 | reversed=0
+loaderMesh=Aligned locking pin socket / 3.62 / 1 | vertices=2272 | triangles=1100 | invalid=0 | degenerate=0 | reversed=0
+pinRadius=0.87999999523162842 | engagedTip=1.1145275831222534 | retractedTip=2.7369403839111328
+pinRadius=1.4800000190734863 | engagedTip=1.7252079248428345 | retractedTip=2.7921209335327148
+pinRadius=3.619999885559082 | engagedTip=3.8815841674804688 | retractedTip=4.5031661987304688
+lockingPinsEngageCollar=True
+lockingPinsClearCollar=True
+bareMesh=Rail backbone / 136 m | vertices=1156 | triangles=480 | invalid=0 | degenerate=0 | reversed=0
+bareMesh=Detailed accelerator bays / coils, ceramics, fasteners and services | vertices=55152 | triangles=54592 | invalid=0 | degenerate=0 | reversed=0
+bareMesh=Detailed accelerator bays / coils, ceramics, fasteners and services | vertices=23120 | triangles=10048 | invalid=0 | degenerate=0 | reversed=0
+bareMesh=Detailed accelerator bays / coils, ceramics, fasteners and services | vertices=13788 | triangles=13648 | invalid=0 | degenerate=0 | reversed=0
+bareMesh=Detailed accelerator bays / coils, ceramics, fasteners and services | vertices=5780 | triangles=2512 | invalid=0 | degenerate=0 | reversed=0
+bareBore=2.1500000953674316
+bareMinimumTriangleRadius=2.1500000953674316
+bareSupportRebuildKeepsMeshCount=True
+success=True

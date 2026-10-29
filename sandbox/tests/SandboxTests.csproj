@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><TargetFramework>net8.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
   <ItemGroup><Compile Include="..\TerminalPadGuidance.cs" Link="TerminalPadGuidance.cs"/></ItemGroup>
-  <ItemGroup><Compile Include="..\LoadingSequence.cs" Link="LoadingSequence.cs"/></ItemGroup>
+  <ItemGroup><Compile Include="..\LoadingSequence.cs" Link="LoadingSequence.cs"/><Compile Include="..\GantrySafety.cs" Link="GantrySafety.cs"/><Compile Include="..\ShellLoadingRoute.cs" Link="ShellLoadingRoute.cs"/><Compile Include="..\LaunchShellPolicy.cs" Link="LaunchShellPolicy.cs"/></ItemGroup>
   <ItemGroup><Compile Include="..\FlightFleet.cs" Link="FlightFleet.cs"/><Compile Include="..\DeliveryEta.cs" Link="DeliveryEta.cs"/><Compile Include="..\RailLaunch.cs" Link="RailLaunch.cs"/><Compile Include="..\DockingPortPolicy.cs" Link="DockingPortPolicy.cs"/><Compile Include="..\ReentryEnvelope.cs" Link="ReentryEnvelope.cs"/><Compile Include="FleetTests.cs"/></ItemGroup>
 </Project>

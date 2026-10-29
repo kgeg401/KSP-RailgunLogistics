@@ -9,7 +9,7 @@ namespace RailgunSandbox
     {
         // Render the actual local KSP scene; informational desktop popups are not part of this camera.
         // This is an asset inspection under added work lighting, not a gameplay screenshot.
-        public static IEnumerator Capture(DepotModel model, string path, Vector3 podPosition)
+        public static IEnumerator Capture(DepotModel model, string path, Vector3 podPosition, Vessel pod = null)
         {
             yield return new WaitForEndOfFrame();
             var obj = new GameObject("KRL inspection camera");
@@ -35,6 +35,17 @@ namespace RailgunSandbox
                 Debug.Log("[RailgunSandbox] Native asset inspection rendered " + path);
                 camera.transform.position = podPosition + root.TransformDirection(new Vector3(21, 6, 27));
                 camera.transform.rotation = Quaternion.LookRotation(podPosition - camera.transform.position, root.up);
+                if (pod != null && pod.loaded) {
+                    var renderers = pod.parts.SelectMany(part => part.GetComponentsInChildren<MeshRenderer>())
+                        .Where(renderer => renderer.enabled && renderer.gameObject.activeInHierarchy).ToArray();
+                    if (renderers.Length > 0) {
+                        var bounds = renderers[0].bounds;
+                        foreach (var renderer in renderers.Skip(1)) bounds.Encapsulate(renderer.bounds);
+                        float distance = bounds.extents.magnitude / Mathf.Sin(camera.fieldOfView * Mathf.Deg2Rad / 2) * 1.15f;
+                        camera.transform.position = bounds.center + root.TransformDirection(new Vector3(.6f,.18f,.8f)).normalized * distance;
+                        camera.transform.rotation = Quaternion.LookRotation(bounds.center - camera.transform.position, root.up);
+                    }
+                }
                 camera.Render(); RenderTexture.active = texture;
                 image.ReadPixels(new Rect(0, 0, 1600, 1200), 0, 0); image.Apply();
                 string closeup = Path.Combine(Path.GetDirectoryName(path), "PodInspection.png");

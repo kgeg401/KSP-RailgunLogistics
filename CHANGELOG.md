@@ -1,3 +1,12 @@
+# 0.3.5 development source - rails and multiplayer follow-up
+
+- Refine accelerator windings, smooth surfaces, distance detail and shared mesh caches; add continuous collars, hydraulic fittings, aligned locking hardware and heading-aware gantry spacing.
+- Check multiplayer dispatch placement against the host's current native snapshot, rejecting unsettled pods without trusting a stale unloaded client flag.
+- Relay short-lived pilot loading samples for observer artwork. Validate ownership, lease, order, clock and subspace without changing durable fleet state or physical launch clearance.
+- Guard Unity teardown order and keep inspection camera targets independent of depot culling.
+- Preserve the separate single-player protective-shell and long-guide experiments. Their source is included; they remain disabled for ordinary/Luna dispatches.
+- See the multiplayer validation report for exact tested builds and remaining acceptance limits. Source publication does not promote the automatic update channel.
+
 # 0.3.4 mechanical loading preview
 
 - Added a traveling two-axis hoist, transport yoke, twin hydraulic collars, driven locking pins, charge indicators, work lights and original synthesized mechanical audio. Pod art remains the original installed KSP parts.

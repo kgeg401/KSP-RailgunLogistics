@@ -151,13 +151,26 @@ namespace RailgunSandbox
                 }
             return node;
         }
-        public static Vessel Spawn(PodRecord record, CelestialBody body, double latitude, double longitude, double terrainHeight)
+        public static Vessel Spawn(PodRecord record, CelestialBody body, double latitude, double longitude, double terrainHeight, bool launchShell = false)
         {
             if (record.Created) throw new InvalidOperationException("A previously created pod cannot be replaced.");
             string missing = Missing(); if (missing.Length > 0) throw new InvalidOperationException("Missing stock-part assembly: " + missing);
             var specs = Assembly();
+            int originalCount = specs.Count;
+            if (launchShell) {
+                var shell = new Spec { Name = LaunchShell.PartName, Parent = 10 };
+                shell.Position = specs[10].Position + Node(specs[10].Name, "bottom") - Node(shell.Name, "top");
+                shell.Nodes["top"] = 10; specs[10].Nodes["bottom"] = specs.Count;
+                specs.Add(shell);
+            }
             var parts = specs.Select((s, i) => PartNode(s, i, record)).ToArray();
-            record.PartIds = parts.Select(n => uint.Parse(n.GetValue("uid"))).ToList();
+            record.PartIds = parts.Take(originalCount).Select(n => uint.Parse(n.GetValue("uid"))).ToList();
+            if (launchShell) {
+                record.LaunchShellRequired = true;
+                record.LaunchShellPartId = uint.Parse(parts.Last().GetValue("uid"));
+                double top = specs.Take(originalCount).Max(s => s.Position.y + 2);
+                LaunchShell.Profile(parts.Last(), top - specs.Last().Position.y);
+            }
             record.OwnPort = record.PartIds[1];
             double height = -specs.Min(s => s.Position.y) + 2;
             var world = body.GetWorldSurfacePosition(latitude, longitude, terrainHeight + height);
@@ -173,7 +186,7 @@ namespace RailgunSandbox
             node.SetValue("rot", KSPUtil.WriteQuaternion(rotation), true); node.SetValue("nrm", KSPUtil.WriteVector(Vector3.up), true);
             var proto = HighLogic.CurrentGame.AddVessel(node);
             var vessel = proto.vesselRef ?? throw new InvalidOperationException("KSP did not create the stock-parts pod.");
-            vessel.isPersistent = true; record.Created = true; record.OriginalParts = specs.Count;
+            vessel.isPersistent = true; record.Created = true; record.OriginalParts = originalCount;
             Debug.Log("[RailgunSandbox] Created unique stock assembly " + record.Number + " / " + record.VesselId + " / parts " + specs.Count);
             return vessel;
         }

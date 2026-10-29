@@ -38,6 +38,8 @@ namespace RailgunSandbox
         readonly ConcurrentQueue<FleetMessage> incoming = new ConcurrentQueue<FleetMessage>();
         readonly Dictionary<int, Pending> pending = new Dictionary<int, Pending>();
         readonly Dictionary<Guid, float> nextLockRequest = new Dictionary<Guid, float>();
+        readonly Dictionary<int,FleetMessage> loadingViews=new Dictionary<int,FleetMessage>();
+        float nextLoadingView;
         static readonly HashSet<int> requestedControl = new HashSet<int>();
         SharedFleet authority;
         bool subscribed;
@@ -133,12 +135,20 @@ namespace RailgunSandbox
         {
             if (view != null) local = view;
             if (!subscribed && ModApiEvent.onModMessageReceived != null) { ModApiEvent.onModMessageReceived.Add(Receive); subscribed = true; }
-            if (!Connected) { authority = null; view = local = null; SetupRequested = FollowFlight = false; pending.Clear(); requestedControl.Clear(); Error = "Waiting for the Luna connection."; return; }
+            if (!Connected) { authority = null; view = local = null; SetupRequested = FollowFlight = false; pending.Clear(); requestedControl.Clear(); loadingViews.Clear(); Error = "Waiting for the Luna connection."; return; }
             while (incoming.TryDequeue(out var message)) {
+                if(message.Kind=="LoadingView") {
+                    var slot=Slot(message.Number);
+                    if(Ready&&message.Epoch==authority.Epoch&&slot?.Pod.Phase==FlightPhase.Reserved&&message.LoadingOrder==slot.Pod.OrderId&&
+                        FlightRules.Finite(message.LoadingSeconds)&&message.LoadingSeconds>=-1&&message.LoadingSeconds<=30&&
+                        FlightRules.Finite(message.LoadingSampleUt)&&(!loadingViews.TryGetValue(message.Number,out var prior)||
+                        prior.LoadingOrder!=message.LoadingOrder||message.LoadingSampleUt>=prior.LoadingSampleUt))loadingViews[message.Number]=message;
+                    continue;
+                }
                 if (message.Fleet == null) { Error = message.Error; continue; }
                 message.Fleet.Validate();
                 var previousAuthority = authority;
-                if (authority != null && authority.Epoch != message.Fleet.Epoch) { pending.Clear(); requestedControl.Clear(); }
+                if (authority != null && authority.Epoch != message.Fleet.Epoch) { pending.Clear(); requestedControl.Clear(); loadingViews.Clear(); }
                 else if (authority != null) {
                     // Independent slot revisions prevent a delayed response from undoing
                     // either player's already acknowledged state.
@@ -222,6 +232,19 @@ namespace RailgunSandbox
                 Lease = slot.Lease, Request = Guid.NewGuid().ToString("N"), Pod = proposed == null ? null : FleetWire.Copy(proposed) };
             pending[slot.Pod.Number] = new Pending { Message = request, Sent = Time.realtimeSinceStartup }; Send(request);
         }
+        public void PublishLoadingView(PodRecord pod,LoadingPose pose,double now)
+        {
+            if(!Ready||!LeaseValid(pod.Number)||Time.realtimeSinceStartup<nextLoadingView)return;
+            nextLoadingView=Time.realtimeSinceStartup+.25f;
+            var slot=Slot(pod.Number);
+            Send(new FleetMessage {Kind="LoadingView",Epoch=authority.Epoch,Number=pod.Number,Lease=slot.Lease,
+                LoadingOrder=pod.OrderId,LoadingSeconds=pose.Stage==LoadingStage.Aligning?-1:pose.Elapsed,LoadingSampleUt=now});
+        }
+        public LoadingPose ObservedLoading(PodRecord pod,double now)
+        {
+            return loadingViews.TryGetValue(pod.Number,out var sample)&&sample.LoadingOrder==pod.OrderId ?
+                LoadingPose.FromPilotSample(sample.LoadingSeconds,sample.LoadingSampleUt,now,pod.LaunchShellRequired):LoadingPose.At(-1,pod.LaunchShellRequired);
+        }
         public void Acquire(PodRecord pod)
         {
             if (!Ready || !VesselProtoSystem.Singleton.ProtoSystemReady) { Error = "Wait for the native Luna world to synchronize."; return; }
@@ -253,6 +276,7 @@ namespace RailgunSandbox
         {
             if (subscribed && ModApiEvent.onModMessageReceived != null) ModApiEvent.onModMessageReceived.Remove(Receive);
             pending.Clear(); authority = null;
+            loadingViews.Clear();
             InputLockManager.RemoveControlLock(TimeLock);
         }
     }

@@ -7,6 +7,7 @@ using RailgunSandbox;
 int checks = 0;
 void Check(bool ok, string message) { if (!ok) throw new Exception(message); checks++; }
 void Reject(Action action, string message) { bool rejected = false; try { action(); } catch (InvalidOperationException) { rejected = true; } Check(rejected, message); }
+void RejectInvalidFleet(Action action, string message) { bool rejected = false; try { action(); } catch (InvalidDataException) { rejected = true; } Check(rejected, message); }
 FleetState New() { var s = FleetState.New(); foreach (var p in s.Pods) { p.Created = true; p.OriginalParts = 20; } return s; }
 void Book(FleetState s, int index = 0, uint port = 2) => FlightRules.Reserve(s, s.Pods[index], 1, port, "Moving station", "MonoPropellant", 100, 120, 1000);
 
@@ -265,4 +266,104 @@ foreach(double rate in new[]{30.0,60.0,144.0}) {
     Check(neverEarly,"Render cadence cannot shorten the loading interlock");
     Check(timed.Update("repeat",LoadingSequence.Duration,true).LaunchClear,"Loading finishes at the same native game time for every update cadence");
 }
+Check(FlightRules.DevelopmentSave(new[] { "-railgun-shell" }) == "Railgun-Shell-Test", "Shell experiment uses its own save");
+Reject(() => FlightRules.DevelopmentSave(new[] { "-railgun-shell", "-railgun-railonly" }), "Shell mode cannot silently select another fixture");
+Check(!LaunchShellPolicy.MayOpen(FlightPhase.RailLaunch, 55000, 900, 110000), "Shell remains closed inside rail phase");
+Check(!LaunchShellPolicy.MayOpen(FlightPhase.Ascent, 49999, 900, 110000), "Shell remains closed below requested 50 km");
+Check(!LaunchShellPolicy.MayOpen(FlightPhase.Ascent, 55000, 900, RailLaunch.Length), "Shell waits for nose and panels to clear muzzle");
+Check(!LaunchShellPolicy.MayOpen(FlightPhase.Ascent, 55000, -1, 110000), "Shell does not deploy on a failed descending launch");
+Check(LaunchShellPolicy.MayOpen(FlightPhase.Ascent, 50000, 900, RailLaunch.Length + 30), "Shell deploys on ascending 50 km flight beyond rail");
+foreach (double invalid in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity }) {
+    Check(!LaunchShellPolicy.MayOpen(FlightPhase.Ascent, invalid, 900, 110000), "Invalid altitude cannot authorize jettison");
+    Check(!LaunchShellPolicy.MayOpen(FlightPhase.Ascent, 55000, invalid, 110000), "Invalid ascent cannot authorize jettison");
+    Check(!LaunchShellPolicy.MayOpen(FlightPhase.Ascent, 55000, 900, invalid), "Invalid rail position cannot authorize jettison");
+    Check(!LaunchShellPolicy.MayBurn(true, false, 100, invalid), "Invalid clock cannot authorize ignition");
+}
+Check(!LaunchShellPolicy.MayBurn(true, true, 100, 200), "Attached base blocks ignition even after recorded clearance");
+Check(!LaunchShellPolicy.MayBurn(true, false, -1, 200), "Missing shell is not successful separation evidence");
+Check(!LaunchShellPolicy.MayBurn(true, false, 100, 102.99), "Engine waits full base clearance delay");
+Check(!LaunchShellPolicy.MayBurn(true, false, 100, 99), "Backwards clock cannot bypass clearance");
+Check(LaunchShellPolicy.MayBurn(true, false, 100, 103), "Engine clearance permits later native circularization");
+Check(LaunchShellPolicy.MayBurn(false, true, -1, 0), "Existing shell-free missions retain original engine behavior");
+var shellFleet = FleetState.New();
+var shellPod = shellFleet.Pods[0]; shellPod.LaunchShellRequired = true;
+RejectInvalidFleet(() => shellFleet.Validate(), "Shell-required save cannot omit its physical part identity");
+shellPod.LaunchShellPartId = 42; shellFleet.Validate();
+shellPod.LaunchShellBaseReleased = true;
+RejectInvalidFleet(() => shellFleet.Validate(), "Base release without verified panel deployment is rejected");
+shellPod.LaunchShellPanelsReleased = true;
+RejectInvalidFleet(() => shellFleet.Validate(), "Deployment requires its recorded native command time");
+shellPod.LaunchShellOpenedAt = 100; shellPod.LaunchShellClearAt = 99;
+RejectInvalidFleet(() => shellFleet.Validate(), "Clearance cannot predate deployment");
+shellPod.LaunchShellClearAt = 102;
+using (var shellBuffer = new MemoryStream()) {
+    xml.Serialize(shellBuffer, shellFleet); shellBuffer.Position = 0;
+    var shellRestored = (FleetState)xml.Deserialize(shellBuffer)!; shellRestored.Validate();
+    Check(shellRestored.Pods[0].LaunchShellPartId == 42 && shellRestored.Pods[0].LaunchShellPanelsReleased && shellRestored.Pods[0].LaunchShellBaseReleased && shellRestored.Pods[0].LaunchShellClearAt == 102,
+        "Reload preserves physical shell identity and verified separation state");
+}
+var badShellBurn = new PodRecord { Phase = FlightPhase.Ascent, RailOnlyAscent = true, CircularizationStarted = true, LaunchShellRequired = true };
+Check(RailLaunch.EnginesLocked(badShellBurn), "Stale circularization flag cannot ignite an attached closed shell");
+var shellLoading=new LoadingSequence(true);
+shellLoading.Update("shell-load",0,true);
+for(int i=1;i<LoadingSequence.ShellDuration*20;i++) {
+    double t=i*.05;var shellPose=shellLoading.Update("shell-load",t,true);
+    Check(!shellPose.LaunchClear,"Shell carrier cannot authorize a shortened launch sequence");
+    if(shellPose.CarrierGrip<1) Check(shellPose.Clamps==1 && shellPose.Pins==1 || shellPose.Stage>=LoadingStage.Unlocking,"Transport grip opens only after the cradle locks hold the shell");
+    if(shellPose.Charge>0) Check(shellPose.CarrierRetraction==1 && shellPose.CarrierGrip==0,"Charging waits for the carrier to withdraw fully");
+    if(shellPose.Stage==LoadingStage.ReleasingCarrier || shellPose.Stage==LoadingStage.RetractingCarrier)
+        Check(shellPose.Pins==1 && shellPose.Clamps==1,"Rail locks retain the shell throughout carrier handover");
+}
+Check(shellLoading.Update("shell-load",LoadingSequence.ShellDuration,true).LaunchClear,"Complete shell sequence clears transport carrier, pins and collars");
+Check(LoadingPose.At(LoadingSequence.Duration,true).LaunchClear==false,"Legacy loading duration cannot fire the larger shell sequence");
+var route=new ShellLoadingRoute();double routeClock=0;
+void TransferSample(double x,double y,double z,double speed=0,double angle=60,bool positioned=true) {route.Update("shell-route",routeClock,x,y,z,29,speed,angle,positioned);routeClock+=.02;}
+for(int i=0;i<200;i++)TransferSample(-36,15,6,0,60,false);
+Check(route.Stage==ShellTransferStage.Gripping && route.Grip==0,"Crane cannot lift before the carrier physically reaches the shell");
+for(int i=0;i<105;i++)TransferSample(-36,15,6);
+Check(route.Stage==ShellTransferStage.Lifting && route.X==-36 && route.Y==50 && route.Z==6,"Shell lifts vertically before traversing the depot");
+for(int i=0;i<200;i++)TransferSample(-36,15,6);
+Check(route.Stage==ShellTransferStage.Lifting,"Elapsed time cannot substitute for reaching the lift waypoint");
+for(int i=0;i<35;i++)TransferSample(-36,50,6);
+Check(route.Stage==ShellTransferStage.Traversing && !route.AlignToRail && route.X==0 && route.Y==50,"Bridge traverses at safe height with the shell upright");
+for(int i=0;i<35;i++)TransferSample(0,50,0);
+Check(route.Stage==ShellTransferStage.Tilting && route.AlignToRail,"Shell tilts only after reaching the overhead rail position");
+for(int i=0;i<100;i++)TransferSample(0,50,0,0,60);
+Check(route.Stage==ShellTransferStage.Tilting,"Position alone cannot complete the tilt stage");
+for(int i=0;i<35;i++)TransferSample(0,50,0,0,.2);
+Check(route.Stage==ShellTransferStage.Seating && route.Y==29,"Aligned shell lowers into the actual rail capture position");
+for(int i=0;i<100;i++)TransferSample(0,29,0,2,.2);
+Check(!route.Seated,"Fast shell motion cannot complete cradle seating");
+for(int i=0;i<35;i++)TransferSample(0,29,0,0,.2);
+Check(route.Seated,"Measured position, speed and attitude complete the shell transfer");
+Reject(()=>route.Update("bad",double.NaN,0,0,0,29,0,0),"Invalid native telemetry cannot advance a shell transfer");
+double GantryFootprintDistance(double degrees,double depth) {
+    double angle=degrees*Math.PI/180,minimum=double.PositiveInfinity;
+    foreach(int sx in new[]{-1,1})foreach(int sz in new[]{-1,1}) {
+        var values=(from x in new[]{38.75,46.7} from z in new[]{depth-.7,depth+.7} select sx*x*Math.Cos(angle)-sz*z*Math.Sin(angle)).ToArray();
+        double lo=values.Min(),hi=values.Max();minimum=Math.Min(minimum,lo<=0&&hi>=0?0:Math.Min(Math.Abs(lo),Math.Abs(hi)));
+    }
+    return minimum;
+}
+Check(GantryFootprintDistance(87.951063047091779,5)<3.85,"Original runway spacing reproduces the native tower intrusion");
+foreach(double bore in new[]{2.15,3.85})for(int halfDegree=0;halfDegree<720;halfDegree++) {
+    double angle=halfDegree*.5*Math.PI/180;
+    double depth=GantrySafety.HalfDepth(Math.Sin(angle),Math.Cos(angle),bore,bore>3?9:7);
+    Check(FlightRules.Finite(depth)&&depth>=7&&depth<=30&&GantryFootprintDistance(halfDegree*.5,depth)>=bore+.05,"Whole tower/brace footprint clears the heading sweep");
+}
+Check(GantrySafety.HalfDepth(0,0,2.15,7)==7,"Vertical bare guide keeps its standard runway spacing");
+Reject(()=>GantrySafety.HalfDepth(double.NaN,1,3.85,9),"Invalid guide direction cannot configure the gantry");
+foreach(double rate in new[]{30.0,60.0,144.0}) {
+    bool same=true;double sampled=1000,seconds=7.25;
+    for(int i=0;i<rate;i++) {
+        double age=i/rate;var shown=LoadingPose.FromPilotSample(seconds,sampled,sampled+age);var expected=LoadingPose.At(seconds+age);
+        same&=shown.Stage==expected.Stage&&Math.Abs(shown.Clamps-expected.Clamps)<1e-9&&Math.Abs(shown.Pins-expected.Pins)<1e-9&&Math.Abs(shown.Charge-expected.Charge)<1e-9;
+    }
+    Check(same,"Remote loading uses the pilot's native clock at every render cadence");
+}
+Check(LoadingPose.FromPilotSample(8,1000,1003).Stage==LoadingStage.Aligning,"A missing pilot sample expires instead of continuing the animation");
+Check(LoadingPose.FromPilotSample(-1,1000,1000.1).Stage==LoadingStage.Aligning,"Lost native capture opens the remote loader");
+Check(LoadingPose.FromPilotSample(8,1000,998).Stage==LoadingStage.Aligning,"A wrong native clock cannot advance remote loading");
+var independentGate=new LoadingSequence();
+Check(LoadingPose.FromPilotSample(14,1000,1001).LaunchClear&&!independentGate.Update("independent",1001,true).LaunchClear,"A complete remote animation never unlocks an independent physical launch gate");
 Console.WriteLine($"PASS {checks} fleet, docking evidence, landing, cargo, launch, loading and persistence checks. Native flight not established by these checks.");

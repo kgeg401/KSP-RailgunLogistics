@@ -1,5 +1,7 @@
 # Reusable railgun sandbox
 
+Current source: the [0.3.5 multiplayer rail validation](../docs/Multiplayer-Rail-Validation-2026-10-29.md) records the native readiness, cleanup and observer-animation fixes. Match both gameplay and server binaries when testing this candidate; source publication alone does not update the pinned friends installation.
+
 This contains the KSP physical-flight prototype and its new Luna shared-fleet integration. The friends build compiles these sources into `RailgunLogistics.dll`; the separate `RailgunSandbox.dll` remains a development-only build and must not be installed alongside the integrated DLL. An updater bridge migrates older friends clients to the approved reusable-fleet alpha.
 
 ## Luna integration status
@@ -51,6 +53,10 @@ The earlier 4 km / 20-degree / 2,700 m/s candidate failed natively: it reached 2
 `-railgun-railonly` loads the separate `Railgun-RailOnly-Test` engineering save. That save stops owned guidance on reaching Rendezvous so the achieved orbit can be inspected before any rendezvous burn. It does not reset or respawn pods in ordinary play. `RailLaunchEvidence-v2.tsv` records rail position, speed, thrust, fuel, RCS, timestep, original assembly size, temperature, dynamic pressure and requested guide acceleration. Older runs use the original trace schema. `tests/audit_rail_flight.py` checks the paired native save, ledger and trace without modifying them.
 
 ## Earlier prototype evidence and continuing boundaries
+
+The opt-in `-railgun-shell` engineering mode adds a stock protective fairing, physical upper-atmosphere separation and engine-clearance interlocks around the original reusable pod. It uses the independent `Railgun-Shell-Test` save. See the [protective shell implementation and acceptance boundary](../docs/Protective-Launch-Shell-2026-10-29.md). This experiment does not enable shell hardware on the shared Luna fleet.
+
+That mode now has a [shell-specific loading carrier and handoff](../docs/Shell-Loading-Animation-2026-10-29.md): measured upright lift, overhead transfer, force-driven tilt about the centre of mass, lowering into the cradle, then a 21-second lock/carrier-release/charging/clearance sequence. The exposed-pod mode retains its original loading timing.
 
 The native scene has a launch facility and two persistent stock-part rockets. The first rocket physically left the rails and flew under its own engine, with delivery cargo isolated from propulsion. That first vehicle exhausted its propulsion before reaching orbit and was destroyed. It did not deliver cargo.
 

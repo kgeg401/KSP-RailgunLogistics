@@ -27,12 +27,15 @@ if ($HelperPath) { $helper=(Resolve-Path -LiteralPath $HelperPath).Path }
 $job=Join-Path $lab 'job-good'; New-Item -ItemType Directory -Path $job | Out-Null
 Copy-Item -LiteralPath (Join-Path $build 'friends.xml') -Destination (Join-Path $job 'release.xml')
 Copy-Item -LiteralPath (Join-Path $build "RailgunLogistics-Update-$BundleVersion.zip") -Destination (Join-Path $job 'client.zip')
-$fake=Start-Process -FilePath (Join-Path $game 'KSP_x64.exe') -ArgumentList '/c ping.exe -n 5 127.0.0.1 >nul' -WindowStyle Hidden -PassThru
+$fake=Start-Process -FilePath (Join-Path $game 'KSP_x64.exe') -ArgumentList '/c ping.exe -n 31 127.0.0.1 >nul' -WindowStyle Hidden -PassThru
 $apply=Start-Process -FilePath $helper -ArgumentList @(('"'+$game+'"'),('"'+$job+'"')) -WindowStyle Hidden -PassThru
-Start-Sleep -Seconds 1
+$waitingResult=Join-Path $job 'result.txt'
+$startupDeadline=[DateTime]::UtcNow.AddSeconds(15)
+while(!(Test-Path -LiteralPath $waitingResult) -and !$apply.HasExited -and [DateTime]::UtcNow -lt $startupDeadline) { Start-Sleep -Milliseconds 100 }
+if($fake.HasExited) { throw 'The synthetic game exited before the helper waiting check.' }
 if(Test-Path -LiteralPath (Join-Path $mod 'InstalledRelease.xml')) { throw 'Updated while matching game process was running.' }
-if((Get-Content -LiteralPath (Join-Path $job 'result.txt') -Raw) -notmatch 'Waiting') { throw 'Helper did not wait for the game.' }
-$apply.WaitForExit(15000) | Out-Null
+if(!(Test-Path -LiteralPath $waitingResult) -or (Get-Content -LiteralPath $waitingResult -Raw) -notmatch 'Waiting') { throw 'Helper did not wait for the game.' }
+$apply.WaitForExit(45000) | Out-Null
 if(!$apply.HasExited -or $apply.ExitCode -ne 0) { throw 'Helper failed to apply after game exit.' }
 if((Get-FileHash -LiteralPath (Join-Path $mod 'Settings.xml')).Hash -ne $settingsHash) { throw 'Local settings changed.' }
 if((Get-Content -LiteralPath (Join-Path $mod 'local-note.txt') -Raw).Trim() -ne 'keep extra files') { throw 'Extra files lost.' }

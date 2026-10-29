@@ -66,6 +66,25 @@ namespace RailgunSandbox
         public long Revision, ServerNow;
         public PodRecord Pod;
         public SharedFleet Fleet;
+        public string LoadingOrder = "";
+        public double LoadingSeconds = -1, LoadingSampleUt = -1;
+    }
+    // Ephemeral presentation only: never changes fleet revisions, launch gates,
+    // leases, physics or durable state. Late samples simply expire.
+    public static class LoadingViewRules
+    {
+        public static bool Accept(SharedFleet state,string player,FleetMessage sample,FleetFacts facts,long now)
+        {
+            var slot=state?.Slots?.SingleOrDefault(s=>s.Pod.Number==sample?.Number);
+            return slot!=null&&sample.Kind=="LoadingView"&&sample.Pod==null&&sample.Fleet==null&&sample.Epoch==state.Epoch&&
+                slot.Pod.Phase==FlightPhase.Reserved&&sample.LoadingOrder==slot.Pod.OrderId&&slot.Pod.OrderId!=""&&
+                slot.Pilot==player&&slot.Lease!=""&&sample.Lease==slot.Lease&&slot.LeaseUntil>now&&
+                facts!=null&&facts.OwnsPodUpdate&&facts.Subspace==state.Subspace&&
+                FlightRules.Finite(sample.LoadingSeconds)&&sample.LoadingSeconds>=-1&&sample.LoadingSeconds<=30&&
+                FlightRules.Finite(sample.LoadingSampleUt)&&FlightRules.Finite(facts.GameTime)&&
+                sample.LoadingSampleUt>=slot.Pod.PhaseStarted&&Math.Abs(sample.LoadingSampleUt-facts.GameTime)<=2&&
+                sample.LoadingSeconds<=sample.LoadingSampleUt-slot.Pod.PhaseStarted+.25;
+        }
     }
     // Facts are supplied by the server adapter from Luna's locks and durable vessel snapshots.
     // No network request can provide these flags.
@@ -165,7 +184,7 @@ namespace RailgunSandbox
                 slot.Pilot = player; slot.Lease = Guid.NewGuid().ToString("N");
             } else if (request.Kind == "Reserve") {
                 if (slot.LeaseUntil > now && slot.Pilot != player) throw new InvalidOperationException("Another player controls this pod.");
-                if (!facts.ReceiverOwned || !facts.ReceiverReady || !facts.PodOnPad || !facts.PodSnapshotVerified)
+                if (!facts.ReceiverOwned || !facts.ReceiverReady || !facts.PodOnPad || !facts.PodSnapshotVerified || !facts.PlacementSettled)
                     throw new InvalidOperationException("Wait for the receiving ship, parked pod and their native snapshots to synchronize.");
                 var proposed = request.Pod ?? throw new InvalidOperationException("Missing delivery manifest.");
                 SameIdentity(old, proposed);

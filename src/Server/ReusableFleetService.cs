@@ -133,6 +133,14 @@ namespace RailgunLogisticsServer
                 try {
                     request = FleetWire.Decode(bytes, count);
                     long now = Rules.Now;
+                    if(request.Kind=="LoadingView") {
+                        var current=authority.Snapshot();var facts=Facts(client,request,now);
+                        if(!LoadingViewRules.Accept(current,client.PlayerName,request,facts,now))return;
+                        var view=new FleetMessage {Kind="LoadingView",Epoch=current.Epoch,Number=request.Number,
+                            LoadingOrder=request.LoadingOrder,LoadingSeconds=request.LoadingSeconds,LoadingSampleUt=request.LoadingSampleUt};
+                        foreach(var peer in ClientRetriever.GetAuthenticatedClients().Where(c=>c.Subspace==client.Subspace))Send(peer,view);
+                        return;
+                    }
                     var snapshot = authority.Apply(client.PlayerName, request, Facts(client, request, now), now);
                     Send(client, new FleetMessage { Kind = "State", Request = request.Request, Fleet = snapshot, ServerNow = now });
                 } catch (Exception ex) {

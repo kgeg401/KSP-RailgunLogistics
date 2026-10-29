@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net472</TargetFramework><AssemblyName>RailgunSandbox</AssemblyName><Version>0.3.4</Version></PropertyGroup>
+  <PropertyGroup><TargetFramework>net472</TargetFramework><AssemblyName>RailgunSandbox</AssemblyName><Version>0.3.5</Version></PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net472" Version="1.0.3" PrivateAssets="all" />
     <Reference Include="Assembly-CSharp"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\Assembly-CSharp.dll</HintPath><Private>false</Private></Reference>
@@ -16,7 +16,7 @@
     <Reference Include="0Harmony"><HintPath>$(KspRoot)\GameData\000_Harmony\0Harmony.dll</HintPath><Private>false</Private></Reference>
     <Compile Include="FlightFleet.cs"/><Compile Include="SharedFleet.cs"/><Compile Include="NetworkFleet.cs"/><Compile Include="RailLaunch.cs"/><Compile Include="DockingHardware.cs"/><Compile Include="DockingPortPolicy.cs"/><Compile Include="RailgunDeliveryPort.cs"/><Compile Include="AeroMenu.cs"/><Compile Include="ReentryEnvelope.cs"/><Compile Include="RecoveryGuidance.cs"/><Compile Include="StockPods.cs"/><Compile Include="DepotModel.cs"/><Compile Include="SandboxFlight.cs"/><Compile Include="DepotInspection.cs"/>
     <Compile Include="DeliveryEta.cs"/><Compile Include="NativeDeliveryEta.cs"/><Compile Include="TerminalPadGuidance.cs"/>
-    <Compile Include="LoadingSequence.cs"/><Compile Include="LoadingMechanism.cs"/>
+    <Compile Include="LoadingSequence.cs"/><Compile Include="LoadingMechanism.cs"/><Compile Include="GantrySafety.cs"/><Compile Include="LoaderAssets.cs"/><Compile Include="InspectionTargetFollower.cs"/><Compile Include="ShellLoadingRoute.cs"/><Compile Include="ShellCarrier.cs"/><Compile Include="RailMesh.cs"/><Compile Include="RailAssets.cs"/><Compile Include="RailInspection.cs"/><Compile Include="LaunchShellPolicy.cs"/><Compile Include="LaunchShell.cs"/>
     <Reference Include="UnityEngine.AudioModule"><HintPath>$(KspRoot)\KSP_x64_Data\Managed\UnityEngine.AudioModule.dll</HintPath><Private>false</Private></Reference>
     <Compile Include="MultiplayerValidation.cs"/>
   </ItemGroup>

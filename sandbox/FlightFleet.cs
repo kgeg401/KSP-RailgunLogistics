@@ -16,6 +16,10 @@ namespace RailgunSandbox
         public List<uint> PartIds = new List<uint>();
         public bool Created, CargoTransferred, RecoveryTest;
         public bool RailOnlyAscent, CircularizationPlanned, CircularizationStarted;
+        public bool LaunchShellRequired;
+        public bool LaunchShellPanelsReleased, LaunchShellBaseReleased;
+        public uint LaunchShellPartId;
+        public double LaunchShellOpenedAt = -1, LaunchShellClearAt = -1;
         public double RailHeading = 90, CircularizationDeltaV, CircularizationHalfBurnTime;
         public string DockingType = "size1";
         public string DockingHardwareConfig = "";
@@ -47,7 +51,12 @@ namespace RailgunSandbox
                 !Pods.Select(p => p.Number).OrderBy(n => n).SequenceEqual(new[] { 1, 2 }) ||
                 Pods.Select(p => p.VesselId).Distinct().Count() != 2 ||
                 Pods.Any(p => !Guid.TryParseExact(p.VesselId, "N", out _) || !Enum.IsDefined(typeof(FlightPhase), p.Phase)) ||
-                Pods.Any(p => !FlightRules.Finite(p.CargoUnits) || p.CargoUnits < 0 || !FlightRules.Finite(p.PhaseStarted)))
+                Pods.Any(p => !FlightRules.Finite(p.CargoUnits) || p.CargoUnits < 0 || !FlightRules.Finite(p.PhaseStarted)) ||
+                Pods.Any(p => p.LaunchShellRequired && (p.LaunchShellPartId == 0 || p.PartIds.Contains(p.LaunchShellPartId) ||
+                    !FlightRules.Finite(p.LaunchShellOpenedAt) || !FlightRules.Finite(p.LaunchShellClearAt) ||
+                    p.LaunchShellPanelsReleased && p.LaunchShellOpenedAt < 0 ||
+                    p.LaunchShellBaseReleased && !p.LaunchShellPanelsReleased ||
+                    p.LaunchShellClearAt >= 0 && (!p.LaunchShellBaseReleased || p.LaunchShellClearAt < p.LaunchShellOpenedAt))))
                 throw new InvalidDataException("Invalid reusable-pod fleet. Restore the save; do not generate replacement pods.");
         }
     }
@@ -61,6 +70,7 @@ namespace RailgunSandbox
                 { "-railgun-demo", "Railgun-Reusable-Demo" },
                 { "-railgun-reentry", "Railgun-Reentry-Test" },
                 { "-railgun-railonly", "Railgun-RailOnly-Test" },
+                { "-railgun-shell", "Railgun-Shell-Test" },
                 { "-railgun-porttest", "Railgun-Port-Selection-Test" }
             };
             var selected = arguments.Where(modes.ContainsKey).Distinct().ToArray();
