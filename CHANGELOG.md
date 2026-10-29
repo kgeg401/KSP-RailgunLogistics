@@ -1,3 +1,11 @@
+# 0.3.4 mechanical loading preview
+
+- Added a traveling two-axis hoist, transport yoke, twin hydraulic collars, driven locking pins, charge indicators, work lights and original synthesized mechanical audio. Pod art remains the original installed KSP parts.
+- Added a measured capture and 14.5-second locking/charging/clearance sequence before launch. Motion loss, a sample gap, new order or scene reset blocks inherited clearance. Existing crane forces and launch guidance remain responsible for actual movement.
+- Corrected art attachment to the root probe rather than the physics center of mass.
+- Added isolated daylight setup, loading replay/hold and camera controls for repeatable native verification. These are unavailable in ordinary and Luna saves.
+- Kept the normal host and automatic channel on 0.3.2 after a native parked-pod scene-reload failure. Full consecutive multiplayer delivery/return remains unverified.
+
 # Changelog
 
 ## 0.3.3 development — not released

@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><TargetFramework>net6.0</TargetFramework><AssemblyName>RailgunLogistics.Server</AssemblyName><Version>0.3.3</Version></PropertyGroup>
+  <PropertyGroup><TargetFramework>net6.0</TargetFramework><AssemblyName>RailgunLogistics.Server</AssemblyName><Version>0.3.4</Version></PropertyGroup>
   <ItemGroup>
     <Reference Include="Server"><HintPath>$(LunaRoot)\Server.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="LunaConfigNode"><HintPath>$(LunaRoot)\LunaConfigNode.dll</HintPath><Private>false</Private></Reference>

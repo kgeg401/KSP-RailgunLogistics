@@ -8,6 +8,7 @@ namespace RailgunSandbox
     public sealed class DepotModel : IDisposable
     {
         public readonly GameObject Root;
+        public readonly LoadingMechanism Loader;
         readonly Transform rail;
         readonly double guideLength, guideElevation;
         readonly List<Material> materials = new List<Material>();
@@ -47,6 +48,7 @@ namespace RailgunSandbox
             }
             Lamp(new Vector3(-12, 45, 10), new Vector3(0, 55, 0));
             Lamp(new Vector3(12, 90, 10), new Vector3(0, 80, 0));
+            Loader = new LoadingMechanism(Root.transform);
         }
         public static float PadX(int number) => number == 1 ? -36 : 36;
         Material Material(Color color) {
@@ -84,6 +86,6 @@ namespace RailgunSandbox
             Root.transform.position = (Vector3)pos; Root.transform.rotation = Quaternion.LookRotation((Vector3)north, (Vector3)up);
             Root.SetActive(FlightGlobals.ActiveVessel != null && (FlightGlobals.ActiveVessel.GetWorldPos3D() - pos).magnitude < guideLength + 15000);
         }
-        public void Dispose() { UnityEngine.Object.Destroy(Root); foreach (var m in materials) UnityEngine.Object.Destroy(m); }
+        public void Dispose() { Loader.Dispose(); UnityEngine.Object.Destroy(Root); foreach (var m in materials) UnityEngine.Object.Destroy(m); }
     }
 }

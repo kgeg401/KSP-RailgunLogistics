@@ -233,4 +233,36 @@ Check(padNear.Active && padNear.SlowDescent && padNear.MaximumDescentSpeed > 8 &
 var padFarLow = TerminalPadGuidance.Compute(1000, 0, 20, 0, 240, -2, 9.81, 60);
 Check(padFarLow.MaximumDescentSpeed < padNear.MaximumDescentSpeed, "A large low-altitude miss keeps more time for lateral correction");
 Check(padAligned.Active && !padAligned.SlowDescent, "An aligned settled approach retains native descent timing");
-Console.WriteLine($"PASS {checks} fleet, docking evidence, landing, cargo, launch and persistence checks. Native flight not established by these checks.");
+var loader = new LoadingSequence();
+Check(loader.Update("order-a",100,false).Stage == LoadingStage.Aligning, "A remote pod cannot start closing the cradle");
+Check(loader.Update("order-a",100.25,true).Stage == LoadingStage.Capturing, "First capture sample starts a fresh motion check");
+for(int i=1;i<=57;i++) {
+    var sample=loader.Update("order-a",100.25+i*.25,true);
+    Check(!sample.LaunchClear, "No launch before the complete clearance sequence");
+    Check(sample.Clamps>=0 && sample.Clamps<=1 && sample.Pins>=0 && sample.Pins<=1, "Actuator travel remains bounded");
+    if(sample.Stage==LoadingStage.Locking || sample.Stage==LoadingStage.Charging || sample.Stage==LoadingStage.Unlocking)
+        Check(sample.Clamps==1, "Collars remain closed while locking pins engage or retract");
+}
+var clear=loader.Update("order-a",100.25+LoadingSequence.Duration,true);
+Check(clear.LaunchClear && clear.Clamps==0 && clear.Pins==0 && clear.Charge==1, "Launch is permitted only with collars open, pins withdrawn and charge ready");
+Check(!loader.Update("order-b",115,true).LaunchClear, "A new order cannot inherit launch clearance");
+for(int i=1;i<=24;i++)loader.Update("order-b",115+i*.25,true);
+Check(loader.Pose.Stage==LoadingStage.Locking, "Sequence reaches measured pin engagement");
+Check(loader.Update("order-b",121.25,false).Stage==LoadingStage.Aligning && loader.Pose.Pins==0, "Lost alignment cancels pin engagement and launch permission");
+loader.Update("order-b",121.5,true);
+Check(loader.Update("order-b",121.5,true).Elapsed==0, "A paused native clock cannot advance the mechanism");
+loader.Update("order-b",121.75,true);
+Check(loader.Update("order-b",130,true).Elapsed==0, "Missing capture samples cannot complete a loading animation in the background");
+Check(loader.Update("order-b",129,true).Elapsed==0, "A backward clock requires a new capture window");
+Check(loader.Update("order-b",double.NaN,true).Stage==LoadingStage.Aligning, "An invalid clock resets loading and blocks launch");
+loader.Update("order-b",140,true);loader.Update("order-b",140.25,true);loader.Reset();
+Check(loader.Pose.Stage==LoadingStage.Aligning && !loader.Pose.LaunchClear, "Scene reset cannot reuse a completed gate");
+foreach(double rate in new[]{30.0,60.0,144.0}) {
+    var timed=new LoadingSequence();double time=0;
+    bool neverEarly=true;
+    timed.Update("repeat",time,true);
+    while(time+1/rate<LoadingSequence.Duration) {time+=1/rate;neverEarly &= !timed.Update("repeat",time,true).LaunchClear;}
+    Check(neverEarly,"Render cadence cannot shorten the loading interlock");
+    Check(timed.Update("repeat",LoadingSequence.Duration,true).LaunchClear,"Loading finishes at the same native game time for every update cadence");
+}
+Console.WriteLine($"PASS {checks} fleet, docking evidence, landing, cargo, launch, loading and persistence checks. Native flight not established by these checks.");

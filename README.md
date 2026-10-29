@@ -1,10 +1,12 @@
 # Railgun Logistics
 
+**[0.3.4 mechanical loading preview](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.3.4)** adds a traveling hoist, hydraulic collars, locking pins, charge lights and mechanical sound around the installed stock-part pod. Loading checks real alignment and holds launch until pins and collars clear. This is a manual opt-in preview. The ordinary shared-server update channel remains on 0.3.2: a parked second pod broke during a native scene-reload test, and the complete multiplayer delivery/return cycle remains unverified. See [loading verification](docs/Mechanical-Loading-Checkpoint.md).
+
 **Download the [0.3.2 reusable-pod multiplayer alpha](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.3.2).** It adds an advisory delivery ETA to the physical-pod menu, alongside matching docking hardware, the Frutiger Aero menu and a server-owned two-pod fleet. See [installation and automatic updates](README-Updates.md) for requirements and the one-time migration from 0.2.3. Players keep their existing KSP and Luna client.
 
 The ETA becomes available when native guidance has a usable encounter or docking approach. It uses game time and reports calculating when there is no reliable plan. Experimental rail-only launches and precision landing work are documented in [the October 28 checkpoint](docs/Launch-Landing-Checkpoint.md); they remain disabled in ordinary and Luna dispatches.
 
-The development source is now 0.3.3 and contains a further experimental terminal-descent fuel policy. It is not a published client update; the installed host and updater channel remain on 0.3.2.
+Development source 0.3.4 retains the isolated 0.3.3 terminal-descent experiment. It is not enabled in ordinary or Luna flights. The installed host and automatic updater channel remain on 0.3.2.
 
 Two native clients have shared a flight through rail launch, powered ascent and stable orbit. The complete multiplayer docking, delivery and return cycle remains unverified. Only Kerbin-orbit receivers, the same Luna subspace and 1x time are supported in this alpha. The earlier [0.2.3 assisted-docking download](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.2.3) remains available; the sections below describe that older service retained for compatibility.
 

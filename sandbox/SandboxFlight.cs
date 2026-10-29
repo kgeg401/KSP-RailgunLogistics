@@ -69,6 +69,9 @@ namespace RailgunSandbox
         readonly HashSet<string> guidedByUs = new HashSet<string>();
         readonly Dictionary<int, DeliveryEstimate> deliveryEstimates = new Dictionary<int, DeliveryEstimate>();
         readonly Dictionary<int, string> deliveryEstimateKeys = new Dictionary<int, string>();
+        readonly Dictionary<int, LoadingSequence> loadingSequences = new Dictionary<int, LoadingSequence>();
+        bool holdLoadingDemo;
+        bool demoDaylight;
         double nextEtaSample;
         MonoBehaviour legacyService;
         bool legacyWasEnabled;
@@ -247,6 +250,14 @@ namespace RailgunSandbox
         void Update()
         {
             if (!enabledHere || state == null || home == null || faulted) return;
+            if (demoDaylight) {
+                var surfaceUp = (home.GetWorldSurfacePosition(state.HomeLatitude,state.HomeLongitude,ground)-home.position).normalized;
+                double sun = Vector3d.Dot(surfaceUp,(home.orbit.referenceBody.position-home.position).normalized);
+                if (network != null || state.Pods.Any(FlightRules.Busy) || sun > .65) {
+                    TimeWarp.SetRate(0,true); demoDaylight=false;
+                    Debug.Log("[RailgunSandbox] Isolated daylight setup ended at native UT "+Now.ToString("R",CultureInfo.InvariantCulture));
+                }
+            }
             if (network != null) {
                 network.Pump(ref state);
                 foreach (var pod in state.Pods.Where(p => !network.LeaseValid(p.Number))) {
@@ -274,6 +285,19 @@ namespace RailgunSandbox
             model?.Place(home, state.HomeLatitude, state.HomeLongitude, ground);
             var guided = state.Pods.FirstOrDefault(p => p.Phase == FlightPhase.Reserved || p.Phase == FlightPhase.RailLaunch);
             if (guided != null && guided.CradleHeight > 0) model.ConfigureRail(guided.CradleHeight, guided.RailHeading);
+            if (guided != null && guided.CradleHeight > 0) {
+                if (network != null && !network.CanAct(guided) && guided.Phase == FlightPhase.Reserved) {
+                    var observedPod = StockPods.Vessel(guided);
+                    if (observedPod != null && observedPod.loaded && !observedPod.packed) {
+                        RailFrame(guided, out var observedOrigin, out var observedAxis, out var observedUp);
+                        var offset = observedPod.GetWorldPos3D() - observedOrigin;
+                        double along = Vector3d.Dot(offset, observedAxis);
+                        LoadingFor(guided).Update(guided.OrderId, Now, RailLaunch.Captured(along, (offset-observedAxis*along).magnitude, observedPod.srfSpeed, Vector3d.Angle(observedPod.transform.up, observedAxis)));
+                    }
+                }
+                var pose = guided.Phase == FlightPhase.RailLaunch ? LoadingPose.At(LoadingSequence.Duration) : LoadingFor(guided).Pose;
+                model.Loader.Update(StockPods.Vessel(guided), pose, guided.CradleHeight, guided.Phase == FlightPhase.Reserved, Time.deltaTime);
+            } else model?.Loader.SetIdle();
             if (state.Pods.Any(FlightRules.Busy) && TimeWarp.CurrentRate != 1) TimeWarp.SetRate(0, true);
             if (Time.realtimeSinceStartup >= nextStatus) {
                 nextStatus = Time.realtimeSinceStartup + 2;
@@ -422,8 +446,14 @@ namespace RailgunSandbox
                     double loadingAlong = Vector3d.Dot(loadingOffset, loadingAxis);
                     double loadingLateral = (loadingOffset - loadingAxis * loadingAlong).magnitude;
                     double loadingAngle = Vector3d.Angle(v.transform.up, loadingAxis);
-                    p.Detail = FormattableString.Invariant($"Crane alignment: along {loadingAlong:F2} m / lateral {loadingLateral:F2} m / speed {v.srfSpeed:F2} m/s / angle {loadingAngle:F2} deg");
-                    if (RailLaunch.Captured(loadingAlong, loadingLateral, v.srfSpeed, loadingAngle)) Change(p, FlightPhase.RailLaunch);
+                    var loadingPose = LoadingFor(p).Update(p.OrderId, Now, RailLaunch.Captured(loadingAlong, loadingLateral, v.srfSpeed, loadingAngle));
+                    p.Detail = FormattableString.Invariant($"{loadingPose.Description}: along {loadingAlong:F2} m / lateral {loadingLateral:F2} m / speed {v.srfSpeed:F2} m/s / angle {loadingAngle:F2} deg");
+                    if (holdLoadingDemo && loadingPose.LaunchClear) p.Detail = "Isolated demo hold: loading hardware clear; launch not released";
+                    LoadingSample(p, v, loadingPose, loadingAlong, loadingLateral, loadingAngle);
+                    if (loadingPose.LaunchClear && !holdLoadingDemo) {
+                        model.Loader.Update(v, loadingPose, p.CradleHeight, true, 0);
+                        Change(p, FlightPhase.RailLaunch);
+                    }
                     break;
                 case FlightPhase.RailLaunch:
                     RailFrame(p, out var railOrigin, out var railAxis, out var railUp);
@@ -530,6 +560,16 @@ namespace RailgunSandbox
             }
         }
         static double RootHeight(Vessel v) => -v.parts.Min(part => v.transform.InverseTransformPoint(part.transform.position).y) + 2;
+        LoadingSequence LoadingFor(PodRecord p) {
+            if (!loadingSequences.TryGetValue(p.Number, out var sequence)) loadingSequences[p.Number] = sequence = new LoadingSequence();
+            return sequence;
+        }
+        void LoadingSample(PodRecord p, Vessel v, LoadingPose pose, double along, double lateral, double angle) {
+            string path = Path.Combine(folder, "LoadingMechanism-v1.tsv");
+            if (!File.Exists(path)) File.WriteAllText(path, "ut\tpod\tphase\tstage\telapsed\talong\tlateral\tspeed\tangle\tclamps\tpins\tcharge\tlaunchClear\tparts\tthrottle\tliquidFuel\toxidizer\n");
+            var resources = v.parts.SelectMany(part => part.Resources.Cast<PartResource>()).ToArray();
+            File.AppendAllText(path, FormattableString.Invariant($"{Now:R}\t{p.Number}\t{p.Phase}\t{pose.Stage}\t{pose.Elapsed:R}\t{along:R}\t{lateral:R}\t{v.srfSpeed:R}\t{angle:R}\t{pose.Clamps:R}\t{pose.Pins:R}\t{pose.Charge:R}\t{pose.LaunchClear}\t{v.parts.Count}\t{v.ctrlState.mainThrottle:R}\t{resources.Where(r=>r.resourceName=="LiquidFuel").Sum(r=>r.amount):R}\t{resources.Where(r=>r.resourceName=="Oxidizer").Sum(r=>r.amount):R}\n"));
+        }
         static double UprightAngle(Vessel v) => Vector3d.Angle(v.rootPart.transform.up, (v.GetWorldPos3D() - v.mainBody.position).normalized);
         void ResolveGround()
         {
@@ -758,21 +798,25 @@ namespace RailgunSandbox
             }
             KSP.UI.UIMasterController.Instance.HideUI(); GameEvents.onHideUI.Fire();
             FlightCamera.SetMode(shot == "orbit" ? FlightCamera.Modes.ORBITAL : FlightCamera.Modes.FREE);
-            if (shot == "wide") {
+            if (shot == "wide" || shot == "loading" || shot == "locks") {
                 if (showcasePivot == null) {
                     showcasePivot = new GameObject("KRL showcase framing pivot");
                     showcasePivot.transform.SetParent(model.Root.transform, false);
-                    showcasePivot.transform.localPosition = new Vector3(0, 45, 0);
                 }
+                var loadingPod = state.Pods.FirstOrDefault(p => p.Phase == FlightPhase.Reserved || p.Phase == FlightPhase.RailLaunch);
+                float height = loadingPod?.CradleHeight > 0 ? (float)loadingPod.CradleHeight : 28;
+                var visiblePod = loadingPod == null ? null : StockPods.Vessel(loadingPod);
+                if (visiblePod != null && visiblePod.loaded) height += Vector3.Dot(visiblePod.rootPart.transform.position-(Vector3)visiblePod.GetWorldPos3D(),model.Root.transform.up);
+                showcasePivot.transform.localPosition = shot == "locks" ? new Vector3(0,height-12,0) : new Vector3(0,shot=="loading"?32:45,0);
                 FlightCamera.SetTarget(showcasePivot.transform);
             } else if (shot == "coupler" && PortSelectionTestSave) {
                 var own = OwnPort(state.Pods[0]) ?? throw new InvalidOperationException("Load the test pod connector first.");
                 FlightCamera.SetTarget(own.part.transform);
             } else FlightCamera.SetTarget(FlightGlobals.ActiveVessel);
             var camera = FlightCamera.fetch;
-            camera.camHdg = shot == "orbit" ? 1.3f : 2.2f;
-            camera.camPitch = shot == "wide" ? .2f : shot == "orbit" ? .35f : .12f;
-            camera.SetDistanceImmediate(shot == "coupler" && PortSelectionTestSave ? 6 : shot == "wide" ? 180 : shot == "pod" ? 45 : 65);
+            camera.camHdg = shot == "orbit" ? 1.3f : shot=="locks"?2.5f:2.2f;
+            camera.camPitch = shot == "wide" ? .2f : shot == "orbit" ? .35f : shot=="locks"?.04f:.12f;
+            camera.SetDistanceImmediate(shot == "coupler" && PortSelectionTestSave ? 6 : shot=="locks"?24:shot=="loading"?108:shot == "wide" ? 180 : shot == "pod" ? 45 : 65);
             camera.FieldOfView = 60;
             Debug.Log("[RailgunSandbox] Showcase camera " + shot + "; native simulation unchanged.");
         }
@@ -793,6 +837,18 @@ namespace RailgunSandbox
                 LoadRecoveryCase(command.Substring("load-case:".Length)); return;
             }
             if (command.StartsWith("showcase-")) { ShowcaseShot(command.Substring(9)); return; }
+            if (command == "demo-daylight") {
+                if (network != null || SaveName != "Railgun-Reusable-Demo" || state.Pods.Any(FlightRules.Busy)) throw new InvalidOperationException("Daylight setup requires the isolated demo with no active flight.");
+                demoDaylight=true;TimeWarp.SetRate(3,true);return;
+            }
+            if (command == "loading-hold" || command == "loading-cycle" || command == "loading-release") {
+                if (NetworkFleet.IsMultiplayer || SaveName != "Railgun-Reusable-Demo") throw new InvalidOperationException("Loading capture controls require the isolated demo save.");
+                var pod = state.Pods.FirstOrDefault(p => p.Phase == FlightPhase.Reserved);
+                if (pod == null) throw new InvalidOperationException("The demo needs an unlaunched reserved pod.");
+                holdLoadingDemo = command != "loading-release";
+                if (command == "loading-cycle") LoadingFor(pod).Reset();
+                return;
+            }
             if (command == "engine-compat1") {
                 var pod = state.Pods[0]; var vessel = StockPods.Vessel(pod);
                 if (!ReentryTestSave || !pod.RecoveryTest || pod.Phase != FlightPhase.Landing || vessel == null || !vessel.loaded)
@@ -944,6 +1000,7 @@ namespace RailgunSandbox
             foreach (var p in state.Pods) {
                 var v = StockPods.Vessel(p);
                 lines.AppendLine($"Pod {p.Number}: {p.Phase} / {p.Detail} / id={p.VesselId} / created={p.Created} / cargoTransferred={p.CargoTransferred}");
+                if (p.Phase == FlightPhase.Reserved) { var loading = LoadingFor(p).Pose; lines.AppendLine(FormattableString.Invariant($"  loading: stage={loading.Stage} elapsed={loading.Elapsed:F2} clamps={loading.Clamps:F3} pins={loading.Pins:F3} charge={loading.Charge:F3} launchClear={loading.LaunchClear} demoHold={holdLoadingDemo}")); }
                 var eta = PodEta(p);
                 lines.AppendLine("  " + eta.Display(Now) + " / basis=" + eta.Basis);
                 lines.AppendLine(FormattableString.Invariant($"  eta: available={eta.Available} sampleUT={eta.SampleUt:R} earliestUT={eta.EarliestUt:R} latestUT={eta.LatestUt:R}"));

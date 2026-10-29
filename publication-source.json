@@ -1,0 +1,20 @@
+{
+  "version": "0.3.4",
+  "scope": "Mechanical loading manual opt-in preview; no updater channel promotion",
+  "files": {
+    "README.md": "c07688a95b4d88ef72f252335b2935b71e42ed46b116c90edede65735fdd82fc",
+    "README-Updates.md": "4e8992546f9d50392fba6eb349185b0cbcdded34e165de2dd246162bb6b4e37e",
+    "CHANGELOG.md": "0e21bc60d8a8def3b5e232d80e50805acbecb673cfc2fa0a1e897a2053a21ebd",
+    "docs/Mechanical-Loading-Checkpoint.md": "b958b6e84f82f4765eb12eea828e2226dc4788d979c1eea8816dda6136a61a09",
+    "sandbox/Build-Sandbox.ps1": "979222203a492930822d268f76635c43e2a35216d8df9acc9cc3dae85eec4911",
+    "sandbox/DepotModel.cs": "16eb9c9c49936d1f3d84f1025dfb7c90561eacca4ddfcb017fb4c09f71d764f6",
+    "sandbox/RailgunSandbox.csproj": "2ea2e4b85d9fdee2d506dd3f63784f52f93197369e9dacfbb12ae84d284b8dbd",
+    "sandbox/SandboxFlight.cs": "7d570523407e5bf7cf1f5abbc541530bc38873e1c464cb2656c3057d58966f91",
+    "sandbox/LoadingSequence.cs": "ab24ebbb19968db070070f5f0bd0d177066530f3952ff499e86bdcb709f8ac04",
+    "sandbox/LoadingMechanism.cs": "655a8e5372a1a10451aa42f606f989b395fefeaf425f3848705278f05abab89f",
+    "sandbox/tests/FleetTests.cs": "dfcf22d83a5bdaeca0cfe2cd0cb2b80cf2c89fa69ddbd03cdcadd774b695804f",
+    "sandbox/tests/SandboxTests.csproj": "fe26a661544bd14ee319602621f98fece60ccf1f24f9e41e5e648ce29010dfe5",
+    "src/Client/RailgunLogistics.csproj": "ed79bd6ac59dd20a29cdbbe836b1b44d881a8c58b0ca260b04539abdecc5ad36",
+    "src/Server/RailgunLogistics.Server.csproj": "c68e6f767af2e5de02aa96ac9104ef13b85823381303487329c395d737c6d493"
+  }
+}

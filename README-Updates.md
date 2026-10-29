@@ -1,5 +1,9 @@
 # Railgun Logistics client updates
 
+## Optional mechanical-loading preview
+
+0.3.4 is a **manual opt-in preview**, separate from the pinned 0.3.2 server channel. Download RailgunLogistics-0.3.4.zip from its release, close KSP, back up GameData/RailgunLogistics, and copy the complete mod folder. Preserve Settings.xml and create DisableAutoUpdates.txt for the preview. Do not join the ordinary host with a mismatched DLL; use an isolated single-player sandbox or a separate matching test host. Restore the 0.3.2 backup before rejoining the existing server. The internal Update ZIP is for the update helper, not first installation. A parked pod failed a native scene-reload test; automatic promotion is held.
+
 The reusable-pod client is the **0.3.2 multiplayer alpha**. It adds a delivery ETA range to the physical-pod menu. The older 0.2.3 assisted-docking download remains available separately. Check the release page and the pinned Friends channel for what has actually been published; a source commit or draft does not update a player.
 
 ## Requirements and first installation
