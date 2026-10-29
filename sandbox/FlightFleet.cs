@@ -54,6 +54,19 @@ namespace RailgunSandbox
 
     public static class FlightRules
     {
+        public static string DevelopmentSave(IEnumerable<string> arguments)
+        {
+            var modes = new Dictionary<string, string> {
+                { "-railgun-sandbox", "Railgun-Reusable-Sandbox" },
+                { "-railgun-demo", "Railgun-Reusable-Demo" },
+                { "-railgun-reentry", "Railgun-Reentry-Test" },
+                { "-railgun-railonly", "Railgun-RailOnly-Test" },
+                { "-railgun-porttest", "Railgun-Port-Selection-Test" }
+            };
+            var selected = arguments.Where(modes.ContainsKey).Distinct().ToArray();
+            if (selected.Length > 1) throw new InvalidOperationException("Choose only one isolated railgun test mode.");
+            return selected.Length == 1 ? modes[selected[0]] : null;
+        }
         public static bool Finite(double n) => !double.IsNaN(n) && !double.IsInfinity(n);
         public static bool SafeOrbit(double periapsis, double eccentricity, double atmosphere) => Finite(periapsis) && Finite(eccentricity) &&
             Finite(atmosphere) && atmosphere >= 0 && eccentricity >= 0 && eccentricity < 1 && periapsis > atmosphere + 3000;

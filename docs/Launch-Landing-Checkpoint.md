@@ -2,6 +2,8 @@
 
 Work started 2026-10-28 03:33 UTC, with a three-hour checkpoint. Public baseline: 0.3.1.
 
+Follow-up: [October 28 reusable-launcher development](Reusable-Launcher-Hour-2026-10-28.md) records the subsequent Junior launch fix, native launch/reload results and a longer pre-entry-to-pad recovery. The uninterrupted orbit return remains unverified.
+
 ## Delivery estimate
 
 The reusable-pod menu shows a delivery estimate on each active pod card and in flight details. A native orbital encounter is projected through the final planned maneuver patch, then includes the rendezvous closing leg and a range for docking alignment/capture. Docking estimates use the installed controller's speed limit. The projection is display-only: reaching the estimate cannot transfer cargo, change phase, refuel or release a pod.

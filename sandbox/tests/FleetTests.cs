@@ -128,6 +128,19 @@ Check(!RailLaunch.OnGuide(RailLaunch.Length, 0) && !RailLaunch.OnGuide(RailLaunc
 Check(!RailLaunch.OnGuide(0, -1), "Invalid negative lateral distance cannot establish rail capture");
 Check(!RailLaunch.OnGuide(10, 4) && !RailLaunch.OnGuide(-5, 0), "No drive outside physical guide capture");
 Check(!RailLaunch.OnGuide(double.NaN, 0), "Invalid rail position rejected");
+Check(FlightRules.DevelopmentSave(new[] { "KSP_x64.exe", "-railgun-railonly" }) == "Railgun-RailOnly-Test", "Explicit rail-only startup does not depend on Luna's previously initialized save name");
+Check(FlightRules.DevelopmentSave(new[] { "-railgun-reentry", "-railgun-pad-guidance" }) == "Railgun-Reentry-Test", "Recovery flags retain the isolated return fixture");
+Check(FlightRules.DevelopmentSave(new[] { "KSP_x64.exe" }) == null, "Ordinary startup selects no development save");
+Check(FlightRules.DevelopmentSave(new[] { "-railgun-porttest", "-railgun-porttest" }) == "Railgun-Port-Selection-Test", "Repeated identical startup mode is unambiguous");
+Reject(() => FlightRules.DevelopmentSave(new[] { "-railgun-porttest", "-railgun-railonly" }), "Conflicting isolated modes cannot silently load another fixture");
+Check(RailLaunch.Captured(.03685, .99017, .32769, .03), "Measured intact Junior cradle sample admits capture within the running guide");
+Check(RailLaunch.Captured(-.7, 1.25, .99, .99), "Capture accepts its bounded position margins with safe speed and attitude");
+Check(!RailLaunch.Captured(.71, .1, .1, .1) && !RailLaunch.Captured(-.71, .1, .1, .1), "Capture rejects both excessive along-guide offsets");
+Check(!RailLaunch.Captured(0, 1.26, .1, .1) && !RailLaunch.Captured(0, -1, .1, .1), "Capture does not relax the running guide's lateral safety boundary");
+Check(!RailLaunch.Captured(0, 0, 1, 0) && !RailLaunch.Captured(0, 0, -.1, 0), "Capture retains the native velocity interlock");
+Check(!RailLaunch.Captured(0, 0, 0, 1) && !RailLaunch.Captured(0, 0, 0, -1), "Capture retains the native attitude interlock");
+Check(!RailLaunch.Captured(double.NaN, 0, 0, 0) && !RailLaunch.Captured(0, double.NaN, 0, 0) &&
+    !RailLaunch.Captured(0, 0, double.NaN, 0) && !RailLaunch.Captured(0, 0, 0, double.NaN), "Missing cradle measurements never admit a launch");
 Check(RailLaunch.DriveAcceleration(RailLaunch.MuzzleSpeed, .02, 3) == 0, "No acceleration above configured muzzle speed");
 Check(RailLaunch.DriveAcceleration(RailLaunch.MuzzleSpeed - 1, .02, 3) <= 50, "Last physics step cannot exceed speed budget");
 Reject(() => RailLaunch.DriveAcceleration(0, 0, 3), "Zero physics timestep rejected");

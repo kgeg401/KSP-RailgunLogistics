@@ -20,13 +20,24 @@ namespace RailgunSandbox
             started = true;
             yield return new WaitForSeconds(2);
             try {
-                HighLogic.SaveFolder = SandboxFlight.SaveName;
-                var game = GamePersistence.LoadGame("persistent", SandboxFlight.SaveName, true, false);
+                if (NetworkFleet.Connected) throw new InvalidOperationException("Do not start an isolated fixture while connected to Luna.");
+                // Luna may initialize SaveFolder to its new blank save at the
+                // main menu. An explicit test flag must not load that save.
+                string testSave = FlightRules.DevelopmentSave(Environment.GetCommandLineArgs());
+                HighLogic.SaveFolder = testSave;
+                var game = GamePersistence.LoadGame("persistent", testSave, true, false);
                 if (game == null || game.Mode != Game.Modes.SANDBOX) throw new InvalidOperationException("Missing isolated railgun sandbox save.");
                 // Game.Load reads CurrentGame.Mode before assigning itself; reproduce the native resume flow.
                 HighLogic.CurrentGame = game;
-                int focus = SandboxFlight.ReentryTestSave ? game.flightState.protoVessels.FindIndex(v => v.vesselName == "KRL Reusable Pod 1") : 0;
-                FlightDriver.StartAndFocusVessel(game, Math.Max(0, focus));
+                int focus = 0;
+                if (testSave == "Railgun-Reentry-Test" || testSave == "Railgun-RailOnly-Test") {
+                    focus = game.flightState.protoVessels.FindIndex(v => v.vesselName == "KRL Reusable Pod 1");
+                    if (focus < 0) throw new InvalidOperationException("The isolated flight fixture is missing its original first pod.");
+                    // Focusing a distant receiver first packs an airborne
+                    // cradle pod below atmosphere; native KSP can destroy it
+                    // before the observer gets a chance to select Watch pod.
+                }
+                FlightDriver.StartAndFocusVessel(game, focus);
             } catch (Exception ex) { Debug.LogError("[RailgunSandbox] Automatic local test load failed: " + ex); }
         }
     }
@@ -406,11 +417,13 @@ namespace RailgunSandbox
                         PersistGame();
                     }
                     if (PortSelectionTestSave) { p.Detail = "Port-selection fixture: physical connector fitted; launch intentionally disabled"; return; }
-                    p.Detail = "Crane loading the stock rocket into the rail cradle";
-                    var cradle = home.GetWorldSurfacePosition(state.HomeLatitude, state.HomeLongitude, ground + p.CradleHeight);
                     RailFrame(p, out var loadingOrigin, out var loadingAxis, out var loadingUp);
-                    if ((v.GetWorldPos3D() - cradle).magnitude < .7 && v.srfSpeed < 1 &&
-                        Vector3d.Angle(v.transform.up, loadingAxis) < 1) Change(p, FlightPhase.RailLaunch);
+                    var loadingOffset = v.GetWorldPos3D() - loadingOrigin;
+                    double loadingAlong = Vector3d.Dot(loadingOffset, loadingAxis);
+                    double loadingLateral = (loadingOffset - loadingAxis * loadingAlong).magnitude;
+                    double loadingAngle = Vector3d.Angle(v.transform.up, loadingAxis);
+                    p.Detail = FormattableString.Invariant($"Crane alignment: along {loadingAlong:F2} m / lateral {loadingLateral:F2} m / speed {v.srfSpeed:F2} m/s / angle {loadingAngle:F2} deg");
+                    if (RailLaunch.Captured(loadingAlong, loadingLateral, v.srfSpeed, loadingAngle)) Change(p, FlightPhase.RailLaunch);
                     break;
                 case FlightPhase.RailLaunch:
                     RailFrame(p, out var railOrigin, out var railAxis, out var railUp);

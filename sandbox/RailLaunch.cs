@@ -14,6 +14,16 @@ namespace RailgunSandbox
         public const double MuzzleSpeed = 2200;
         public const double MaximumCircularizationDeltaV = 800;
 
+        // Native Junior fitting settled with 0.99 m lateral error and 0.33 m/s
+        // surface speed. It was safely inside the 3 m drive envelope, but the
+        // former 0.7 m spherical gate left the crane running indefinitely.
+        // Keep tighter capture margins than the running guide and retain the
+        // velocity/attitude interlocks; the drive still centres with real forces.
+        public static bool Captured(double along, double lateral, double speed, double angle) =>
+            OnGuide(along, lateral) && Math.Abs(along) <= .7 && lateral <= 1.25 &&
+            FlightRules.Finite(speed) && speed >= 0 && speed < 1 &&
+            FlightRules.Finite(angle) && angle >= 0 && angle < 1;
+
         public static bool OnGuide(double along, double lateral) =>
             FlightRules.Finite(along) && FlightRules.Finite(lateral) && along >= -2 && along < Length && lateral >= 0 && lateral <= 3;
 
