@@ -1,5 +1,13 @@
 # Railgun Logistics client updates
 
+## Current shared build: 0.3.6 auto-warp alpha
+
+The shared host and `channel/reusable.xml` now require the matching 0.3.6 build. Existing 0.3.0–0.3.2 reusable clients check at startup, download the verified update, and apply it after KSP closes. Start KSP, allow the download notice, quit normally, wait for the helper, then reopen before joining. Your saves, existing settings and other mods are preserved. The older 0.2.3 migration still uses the updater bridge first.
+
+For a manual installation, use **RailgunLogistics-0.3.6.zip** from the [current release](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.3.6-preview). This standard package is different from the earlier manual AutoWarp-Preview ZIP, which intentionally contains DisableAutoUpdates.txt. If you installed that manual preview, restore your normal setup or remove that opt-out file before expecting automatic updates.
+
+After updating, every connected player enables **Auto warp: On** in Railgun Logistics. Safe orbital coasts can accelerate to 100×; guidance waits at 1× until all players join the same native Luna timeline. Docking, launch/loading, entry and terminal landing do not auto warp. See [the final native validation](docs/Auto-Warp-Validation-2026-10-30.md) for scope and the unresolved complete-trip/docking gaps. The older release notes below are historical.
+
 ## Optional mechanical-loading preview
 
 0.3.4 is a **manual opt-in preview**, separate from the pinned 0.3.2 server channel. Download RailgunLogistics-0.3.4.zip from its release, close KSP, back up GameData/RailgunLogistics, and copy the complete mod folder. Preserve Settings.xml and create DisableAutoUpdates.txt for the preview. Do not join the ordinary host with a mismatched DLL; use an isolated single-player sandbox or a separate matching test host. Restore the 0.3.2 backup before rejoining the existing server. The internal Update ZIP is for the update helper, not first installation. A parked pod failed a native scene-reload test; automatic promotion is held.

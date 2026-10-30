@@ -65,7 +65,18 @@ timeline recovery. It does not establish an uninterrupted delivery/return, recei
 player docking repair, atmospheric landing reliability, or every manoeuvre type.
 See [the complete-trip investigation](Full-RoundTrip-Validation.md) for those gaps.
 
-The download is a matching-client/server preview. Publishing it does not replace
-the running friends host or promote its automatic-update channel. The preview's
-`DisableAutoUpdates.txt` prevents an installed stable updater from reverting the
-manual preview. Restore the stable backup before joining an older pinned host.
+## Shared deployment
+
+After explicit approval, the matching tested client and server were installed on
+the shared host and the reusable-client channel was promoted to bundle 0.3.6.
+All 203 universe files were unchanged during installation; all 61 native vessel
+files and both original pod records remained unchanged after server startup.
+Only normal fleet session/lease coordination files changed during restart. Local
+client settings and unrelated server configuration were preserved.
+
+Use **RailgunLogistics-0.3.6.zip** for a normal manual installation, or the existing
+startup updater. Players must finish the update, quit/reopen and enable Auto warp
+individually before joining an agreed coast. The earlier AutoWarp-Preview ZIP is
+retained as a manual preview and contains `DisableAutoUpdates.txt`; that package
+intentionally opts out of the normal channel. This deployment does not resolve
+the complete-trip or receiving-player docking gaps above.
