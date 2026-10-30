@@ -1,3 +1,11 @@
+# 0.3.6 preview bundle - automatic shared coast warp
+
+- Add a per-client Auto warp toggle, off by default, with safe native orbital coasts capped at 100×.
+- Require fresh opt-in and session acknowledgements from every connected Luna player, then synchronize everyone to the pilot's actual new native subspace before resuming shared guidance.
+- Preserve guidance/nodes through the handoff, hold propulsion during synchronization, and retain native ownership/forward-time checks. Keep protected traversal and atmospheric phases at 1×.
+- One private two-client native pass verified missing-consent hold, real acceleration, slowdown, same-timeline rejoin and intact original pod parts. This is not complete-trip or landing acceptance.
+- Include matching client/server binaries in the manual preview; keep the stable automatic-update channels unchanged. See the auto-warp validation report for exact frozen hashes and remaining limits.
+
 # 0.3.5 development source - rails and multiplayer follow-up
 
 - Refine accelerator windings, smooth surfaces, distance detail and shared mesh caches; add continuous collars, hydraulic fittings, aligned locking hardware and heading-aware gantry spacing.

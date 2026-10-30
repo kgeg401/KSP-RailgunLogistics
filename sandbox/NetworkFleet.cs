@@ -56,12 +56,21 @@ namespace RailgunSandbox
             "Guidance paused during time warp. Return to 1x to resume." : !Ready ?
             "Guidance paused after a Luna time change; recovering shared flight synchronization. " + Error : Error;
         const string TimeLock = "RailgunReusable.GuidedFlightTime";
+        public string CoastEpoch=>authority?.Epoch??"";
+        public bool PrepareCoastLease(PodRecord pod)
+        {
+            var slot=Slot(pod.Number);
+            if(!Ready||slot==null||!CanAct(pod))return false;
+            if(slot.LeaseUntil-Now>=18)return true;
+            if(!pending.ContainsKey(pod.Number))Queue(slot,"Heartbeat",null);
+            return false;
+        }
         public void GuardFlightTime()
         {
             bool guided = HasSnapshot && authority.Slots.Any(s => s.Pilot == Player && s.LeaseUntil > Now && FlightRules.Busy(s.Pod));
             if (guided) {
                 InputLockManager.SetControlLock(ControlTypes.TIMEWARP, TimeLock);
-                if (TimeWarp.CurrentRate != 1) TimeWarp.SetRate(0, true);
+                if (!CoastWarpClient.AllowsNativeWarp && TimeWarp.CurrentRate != 1) TimeWarp.SetRate(0, true);
             } else InputLockManager.RemoveControlLock(TimeLock);
         }
         double Now => FleetClock.Estimate(serverTime, Time.realtimeSinceStartup, snapshotAt);
@@ -133,6 +142,7 @@ namespace RailgunSandbox
         }
         public void Pump(ref FleetState local)
         {
+            if(IsMultiplayer&&Connected)LunaDockingCompatibility.Install();
             if (view != null) local = view;
             if (!subscribed && ModApiEvent.onModMessageReceived != null) { ModApiEvent.onModMessageReceived.Add(Receive); subscribed = true; }
             if (!Connected) { authority = null; view = local = null; SetupRequested = FollowFlight = false; pending.Clear(); requestedControl.Clear(); loadingViews.Clear(); Error = "Waiting for the Luna connection."; return; }

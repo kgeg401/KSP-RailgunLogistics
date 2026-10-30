@@ -137,6 +137,10 @@ namespace RailgunSandbox
         }
         public static bool DockingEvidence(bool ownDocked, bool reciprocalDocked, uint partner, uint requiredPort,
             bool sameVessel, bool anchorPresent) => ownDocked && reciprocalDocked && partner == requiredPort && requiredPort != 0 && sameVessel && anchorPresent;
+        public static bool UndockingEvidence(bool delivered, bool ownPortPresent, string ownState, string otherState,
+            uint partner, uint requiredPort, bool sameVessel, bool anchorPresent) => delivered && ownPortPresent && requiredPort != 0 &&
+            (ownState == "Ready" || ownState == "Disengage") && (otherState == "" || otherState == "Ready" || otherState == "Disengage") &&
+            (partner == 0 || partner == requiredPort) && !sameVessel && !anchorPresent;
         public static double[] CargoAllocation(double requested, double available, IList<double> amounts, IList<double> capacities)
         {
             if (!Finite(requested) || requested <= 0 || !Finite(available) || available < requested || amounts.Count != capacities.Count)

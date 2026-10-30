@@ -366,4 +366,44 @@ Check(LoadingPose.FromPilotSample(-1,1000,1000.1).Stage==LoadingStage.Aligning,"
 Check(LoadingPose.FromPilotSample(8,1000,998).Stage==LoadingStage.Aligning,"A wrong native clock cannot advance remote loading");
 var independentGate=new LoadingSequence();
 Check(LoadingPose.FromPilotSample(14,1000,1001).LaunchClear&&!independentGate.Update("independent",1001,true).LaunchClear,"A complete remote animation never unlocks an independent physical launch gate");
+Check(FlightRules.UndockingEvidence(true,true,"Disengage","Disengage",31,31,false,false),"Native separated Disengage ports may begin RCS clearance without waiting for otherNode to clear");
+Check(FlightRules.UndockingEvidence(true,true,"Ready","",0,31,false,false),"A persisted already-separated native pod may resume departure");
+Check(!FlightRules.UndockingEvidence(true,true,"Docked (docker)","Disengage",31,31,false,false),"A docked own port cannot depart");
+Check(!FlightRules.UndockingEvidence(true,true,"Disengage","Docked (dockee)",31,31,false,false),"A still-docked reciprocal port cannot depart");
+Check(!FlightRules.UndockingEvidence(true,true,"Disengage","Disengage",32,31,false,false),"An unrelated docking partner cannot satisfy departure evidence");
+Check(!FlightRules.UndockingEvidence(true,true,"Disengage","Disengage",31,31,true,false)&&!FlightRules.UndockingEvidence(true,true,"Disengage","Disengage",31,31,false,true),"A shared vessel or retained receiver structure blocks departure");
+Check(!FlightRules.UndockingEvidence(false,true,"Disengage","Disengage",31,31,false,false)&&!FlightRules.UndockingEvidence(true,false,"Ready","",0,31,false,false),"A missing receipt or missing own port cannot unlock return flight");
+Check(AirbrakePolicy.Deploy(FlightPhase.Landing,false,50000,-200,2100,.8,.4),"Cool stock panels may deploy during real atmospheric entry");
+Check(AirbrakePolicy.Deploy(FlightPhase.Landing,true,30000,-200,1600,20,.7)&&!AirbrakePolicy.Deploy(FlightPhase.Landing,false,30000,-200,1600,20,.7),"Thermal hysteresis prevents hot panels reopening immediately");
+Check(!AirbrakePolicy.Deploy(FlightPhase.Landing,true,30000,-200,1600,20,.8),"Predicted exposed-panel heating folds the native airbrakes");
+Check(!AirbrakePolicy.Deploy(FlightPhase.Ascent,false,50000,200,2100,.8,.4),"Ascent never opens recovery airbrakes");
+Check(!AirbrakePolicy.Deploy(FlightPhase.Landing,true,1000,-20,200,20,.4),"The terminal landing envelope retracts the panels");
+Check(AirbrakePolicy.Deploy(FlightPhase.Landing,true,30000,-200,1600,150,.4),"Dense-air braking uses native panel limits instead of an invented pressure cutoff");
+Check(AirbrakePolicy.Deploy(FlightPhase.Landing,false,70000,-200,2100,0,.4),"Return preparation settles the stock flaps before deorbit prediction");
+Check(!AirbrakePolicy.Deploy(FlightPhase.Landing,true,30000,-200,1600,20,double.NaN)&&!AirbrakePolicy.Deploy(FlightPhase.Landing,true,30000,-200,1600,20,double.PositiveInfinity),"Missing thermal trend fails closed");
+Check(RangeBrakePolicy.Next(70,70,8000,.3)<70&&RangeBrakePolicy.Next(30,70,-8000,.3)>30,"Predicted undershoot reduces native braking; overshoot increases it");
+Check(RangeBrakePolicy.Next(30,70,200,.3)==30,"Range deadband holds the native actuator command");
+Check(RangeBrakePolicy.Next(0,70,8000,.8)==70,"Predicted body heating overrides range extension");
+Check(RangeBrakePolicy.Next(0,70,8000,.3)==0&&RangeBrakePolicy.Next(70,70,-8000,.3)==70,"Range control never exceeds the native deployment span");
+bool badRange=false;try { RangeBrakePolicy.Next(30,70,double.NaN,.3); } catch(ArgumentException) { badRange=true; }
+Check(badRange,"Missing range evidence cannot become a fabricated actuator request");
+var cubic=new AeroCurve(new[]{new AeroKnot(0,0,0,0),new AeroKnot(2,8,12,12),new AeroKnot(5,125,75,75)});
+foreach(float x in new[]{0,.125f,.5f,1,1.5f,2,2.25f,3,4,5})Check(Math.Abs(cubic.Evaluate(x)-x*x*x)<.0001,"Frozen nonuniform Hermite curve preserves a known cubic");
+Check(cubic.Evaluate(-1)==0&&cubic.Evaluate(6)==125,"Frozen native curve clamps beyond its captured keys");
+var step=new AeroCurve(new[]{new AeroKnot(0,2,0,float.PositiveInfinity),new AeroKnot(1,7,float.PositiveInfinity,0)});
+Check(step.Evaluate(.9f)==2&&step.Evaluate(1)==7,"Native step tangents retain their endpoint behavior");
+bool badCurve=false;try { new AeroCurve(new[]{new AeroKnot(1,0,0,0),new AeroKnot(0,1,0,0)}); } catch(ArgumentException) { badCurve=true; }
+Check(badCurve,"Unordered aerodynamic keys are rejected");
+bool badInput=false;try { cubic.Evaluate(float.NaN); } catch(ArgumentException) { badInput=true; }
+Check(badInput,"Invalid curve input cannot enter the worker forecast");
+double approachTime=PoweredApproach.Plan(6800,5100,0,334,-314,0,9.65,71.6);
+Check(FlightRules.Finite(approachTime),"Recorded early terminal state has a finite thrust-bounded intercept");
+var approachStart=PoweredApproach.Command(6800,5100,0,334,-314,0,9.65,approachTime);
+double axEnd=-6*6800/(approachTime*approachTime)+2*334/approachTime;
+double ayEnd=6*5100/(approachTime*approachTime)+(2*-314-2)/approachTime+9.65;
+double approachDuration=approachTime;
+Check(Math.Abs(334*approachDuration+approachStart.X*approachDuration*approachDuration/2+(axEnd-approachStart.X)*approachDuration*approachDuration/6-6800)<1e-6,"Unclipped intercept integrates to the requested horizontal position");
+Check(Math.Abs(5100-314*approachDuration+(approachStart.Y-9.65)*approachDuration*approachDuration/2+(ayEnd-approachStart.Y)*approachDuration*approachDuration/6)<1e-6,"Unclipped intercept integrates to ground height");
+Check(Math.Abs(-314+(approachStart.Y-9.65)*approachDuration+(ayEnd-approachStart.Y)*approachDuration/2+.5)<1e-6,"Intercept terminal descent speed is half a metre per second");
+Check(!FlightRules.Finite(PoweredApproach.Plan(6800,5100,0,334,-314,0,9.65,9)),"Insufficient thrust cannot produce an accepted powered intercept");
 Console.WriteLine($"PASS {checks} fleet, docking evidence, landing, cargo, launch, loading and persistence checks. Native flight not established by these checks.");

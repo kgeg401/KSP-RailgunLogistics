@@ -57,6 +57,12 @@ namespace RailgunSandbox
         public static bool PortSelectionTestSave => !NetworkFleet.IsMultiplayer && Environment.GetCommandLineArgs().Contains("-railgun-porttest");
         public static string SaveName => NetworkFleet.IsMultiplayer ? "LunaMultiplayer" : ShellTestSave ? "Railgun-Shell-Test" : PortSelectionTestSave ? "Railgun-Port-Selection-Test" : RailLaunchTestSave ? "Railgun-RailOnly-Test" : ReentryTestSave ? "Railgun-Reentry-Test" : Environment.GetCommandLineArgs().Contains("-railgun-demo") ? "Railgun-Reusable-Demo" : "Railgun-Reusable-Sandbox";
         FleetState state;
+        public FleetState WarpFleet=>state;
+        public void RearmAfterWarp(int number)
+        {
+            var pod=state?.Pods.FirstOrDefault(p=>p.Number==number);
+            if(pod!=null)armed.Remove(pod.VesselId);
+        }
         NetworkFleet network;
         DepotModel model;
         CelestialBody home;
@@ -76,6 +82,7 @@ namespace RailgunSandbox
         readonly Dictionary<int, string> deliveryEstimateKeys = new Dictionary<int, string>();
         readonly Dictionary<int, LoadingSequence> loadingSequences = new Dictionary<int, LoadingSequence>();
         readonly Dictionary<int, ShellLoadingRoute> shellRoutes = new Dictionary<int, ShellLoadingRoute>();
+        readonly Dictionary<int, AirbrakeRecovery> airbrakes = new Dictionary<int, AirbrakeRecovery>();
         ShellLoadingRoute ShellRoute(PodRecord p) {
             if (!shellRoutes.TryGetValue(p.Number, out var route)) shellRoutes[p.Number] = route = new ShellLoadingRoute();
             return route;
@@ -227,6 +234,18 @@ namespace RailgunSandbox
         Vessel Receiver(PodRecord p) => FlightGlobals.Vessels.FirstOrDefault(v => v != null && v.state != Vessel.State.DEAD &&
             (v.loaded ? v.parts.Any(part => part.flightID == p.TargetAnchor) : v.protoVessel?.protoPartSnapshots.Any(part => part.flightID == p.TargetAnchor) == true));
         ModuleDockingNode TargetPort(PodRecord p, Vessel receiver) => receiver?.parts.FirstOrDefault(part => part.flightID == p.TargetPort)?.FindModuleImplementing<ModuleDockingNode>();
+        bool BindFlightTarget(PodRecord pod, Vessel vessel, MechJebCore core, ITargetable target)
+        {
+            // Luna can replace a receiver's Vessel/port object without changing
+            // its saved part IDs. MechJeb's NormalTargetExists still returns true
+            // for the old Vessel, although its Unity Transform is destroyed.
+            bool changed = !ReferenceEquals(core.target.Target, target) || !ReferenceEquals(vessel.targetObject, target);
+            if (changed) core.target.Set(target);
+            if (vessel == FlightGlobals.ActiveVessel && !ReferenceEquals(FlightGlobals.fetch.VesselTarget, target))
+                FlightGlobals.fetch.SetVesselTarget(target);
+            if (changed) Debug.Log("[RailgunSandbox] Rebound pod " + pod.Number + " guidance to current native receiver object; assigned anchor=" + pod.TargetAnchor + " port=" + pod.TargetPort);
+            return changed;
+        }
         ModuleDockingNode OwnPort(PodRecord p) {
             var marker = StockPods.Marker(p); if (marker == null) return null;
             // A stock docking operation can reroot the tree. Follow the persisted part ID.
@@ -272,22 +291,20 @@ namespace RailgunSandbox
         }
         void Update()
         {
-            if (!enabledHere || state == null || home == null || faulted) return;
-            if (demoDaylight) {
-                var surfaceUp = (home.GetWorldSurfacePosition(state.HomeLatitude,state.HomeLongitude,ground)-home.position).normalized;
-                double sun = Vector3d.Dot(surfaceUp,(home.orbit.referenceBody.position-home.position).normalized);
-                if (network != null || state.Pods.Any(FlightRules.Busy) || sun > .65) {
-                    TimeWarp.SetRate(0,true); demoDaylight=false;
-                    Debug.Log("[RailgunSandbox] Isolated daylight setup ended at native UT "+Now.ToString("R",CultureInfo.InvariantCulture));
-                }
-            }
+            if (!enabledHere || home == null || faulted) return;
             if (network != null) {
+                var previousState=state;
                 network.Pump(ref state);
-                foreach (var pod in state.Pods.Where(p => !network.LeaseValid(p.Number))) {
+                if(CoastWarpClient.Holding) {
+                    detail=CoastWarpClient.Status;
+                    if(Time.realtimeSinceStartup>=nextStatus){nextStatus=Time.realtimeSinceStartup+1;try{Command();Status();}catch(Exception ex){Fail(ex);}}
+                    return; // Preserve native guidance and its node through the agreed timeline handoff.
+                }
+                foreach (var pod in (state??previousState)?.Pods.Where(p => !network.LeaseValid(p.Number))??Enumerable.Empty<PodRecord>()) {
                     if (!guidedByUs.Remove(pod.VesselId)) continue;
                     var core = Core(pod);
                     if (core != null) {
-                        if (network.NativeOwner(pod, false)) StopFlight(core);
+                        if (!NetworkFleet.Connected || network.NativeOwner(pod, false)) StopFlight(core);
                         else {
                             RecoveryGuidance.Remove(core.landing);
                             core.GetComputerModule<MechJebModuleAscentAutopilot>().users.Remove(this);
@@ -298,10 +315,19 @@ namespace RailgunSandbox
                     }
                     armed.Remove(pod.VesselId);
                 }
-                if (!network.Ready) {
+                if (!network.Ready || state==null) {
                     detail = network.Status;
                     if (Time.realtimeSinceStartup >= nextStatus) { nextStatus = Time.realtimeSinceStartup + 2; try { Status(); } catch (Exception ex) { Fail(ex); } }
                     return;
+                }
+            }
+            if(state==null)return;
+            if (demoDaylight) {
+                var surfaceUp = (home.GetWorldSurfacePosition(state.HomeLatitude,state.HomeLongitude,ground)-home.position).normalized;
+                double sun = Vector3d.Dot(surfaceUp,(home.orbit.referenceBody.position-home.position).normalized);
+                if (network != null || state.Pods.Any(FlightRules.Busy) || sun > .65) {
+                    TimeWarp.SetRate(0,true); demoDaylight=false;
+                    Debug.Log("[RailgunSandbox] Isolated daylight setup ended at native UT "+Now.ToString("R",CultureInfo.InvariantCulture));
                 }
             }
             if (!state.Pods.Any(FlightRules.Busy) && FlightGlobals.ActiveVessel?.mainBody == home) ResolveGround();
@@ -321,7 +347,7 @@ namespace RailgunSandbox
                     model.Loader.Update(parked,LoadingPose.At(-1,ShellTestSave),idleHeight,false,Time.deltaTime);
                 } else model?.Loader.SetIdle();
             }
-            if (state.Pods.Any(FlightRules.Busy) && TimeWarp.CurrentRate != 1) TimeWarp.SetRate(0, true);
+            if (state.Pods.Any(FlightRules.Busy) && TimeWarp.CurrentRate != 1 && !CoastWarpClient.Enabled) TimeWarp.SetRate(0, true);
             if (Time.realtimeSinceStartup >= nextStatus) {
                 nextStatus = Time.realtimeSinceStartup + 2;
                 try { Command(); if (!enabledHere) return; Status(); } catch (Exception ex) { Fail(ex); }
@@ -425,7 +451,12 @@ namespace RailgunSandbox
             if (!v.loaded || v.packed || v.rootPart?.rb == null) { p.Detail = "Waiting for native pod physics; travel is not credited as delivery"; return; }
             var marker = StockPods.Marker(p); var core = Core(p);
             if (marker == null || core == null) throw new InvalidOperationException("Pod guidance/MechJeb is not ready.");
-            core.node.autowarp = false;
+            AirbrakeRecovery recoveryBrakes = null;
+            if (p.Phase == FlightPhase.Landing || p.Phase == FlightPhase.Refitting) {
+                if (!airbrakes.TryGetValue(p.Number, out recoveryBrakes)) airbrakes[p.Number] = recoveryBrakes = new AirbrakeRecovery();
+                recoveryBrakes.Update(p, v, core, Now, folder);
+            }
+            core.node.autowarp = CoastWarpClient.Autowarp(core);
             if (FlightRules.RequiresMainPropellant(p.Phase) && (p.Phase != FlightPhase.Ascent || !p.RailOnlyAscent || p.CircularizationStarted) && !v.Landed) {
                 var propellant = v.parts.Where(part => p.PartIds.Contains(part.flightID) && !StockPods.CargoParts(v).Contains(part))
                     .SelectMany(part => part.Resources.Cast<PartResource>()).Where(r => r.flowState).ToArray();
@@ -444,6 +475,9 @@ namespace RailgunSandbox
             if (v != FlightGlobals.ActiveVessel && p.Phase != FlightPhase.Unloading && p.Phase != FlightPhase.Undocking) { p.Detail = "Select Watch pod for native flight control"; return; }
             var target = Receiver(p); var own = OwnPort(p);
             if (target == null && p.Phase <= FlightPhase.Docking && p.Phase >= FlightPhase.Reserved) {
+                core.GetComputerModule<MechJebModuleRendezvousAutopilot>().users.Remove(this);
+                core.GetComputerModule<MechJebModuleDockingAutopilot>().users.Remove(this);
+                BindFlightTarget(p, v, core, null);
                 core.node.Abort(); core.thrust.ThrustOff(); p.Detail = "Receiver missing; holding actual trajectory"; return;
             }
             switch (p.Phase) {
@@ -498,7 +532,13 @@ namespace RailgunSandbox
                 case FlightPhase.Rendezvous:
                     if (target.mainBody != v.mainBody) { p.Detail = "Receiver changed body; interplanetary replanning is unsupported"; return; }
                     var rendezvous = core.GetComputerModule<MechJebModuleRendezvousAutopilot>();
-                    if (Once(p)) { core.target.Set(target); rendezvous.desiredDistance.val = 100; rendezvous.maxClosingSpeed.val = 10; rendezvous.users.Add(this); }
+                    // Rebinding the same physical receiver must not throw away
+                    // a partly executed two-burn phasing transfer. Native MJ
+                    // uses the refreshed target for its next planning step.
+                    BindFlightTarget(p, v, core, target);
+                    if (!rendezvous.users.Contains(this) || !rendezvous.enabled) {
+                        rendezvous.desiredDistance.val = 100; rendezvous.maxClosingSpeed.val = 10; rendezvous.users.Add(this);
+                    }
                     p.Detail = "Actual orbit rendezvous: " + rendezvous.status;
                     if (target.loaded && (v.GetWorldPos3D() - target.GetWorldPos3D()).magnitude < 160 && (v.obt_velocity - target.obt_velocity).magnitude < 1.2) {
                         rendezvous.users.Remove(this); core.node.Abort(); Change(p, FlightPhase.Docking);
@@ -506,14 +546,23 @@ namespace RailgunSandbox
                     break;
                 case FlightPhase.Docking:
                     var port = TargetPort(p, target);
-                    if (own == null || port == null) { p.Detail = "Waiting for matching docking ports to load"; return; }
-                    if (Once(p)) { own.MakeReferenceTransform(); core.target.Set(port); core.GetComputerModule<MechJebModuleDockingAutopilot>().users.Add(this); }
+                    var docking = core.GetComputerModule<MechJebModuleDockingAutopilot>();
+                    if (own == null || port == null) {
+                        docking.users.Remove(this); BindFlightTarget(p, v, core, null);
+                        p.Detail = "Waiting for matching docking ports to load"; return;
+                    }
                     var other = own.otherNode;
                     if (FlightRules.DockingEvidence(PortState(own).StartsWith("Docked"), PortState(other).StartsWith("Docked"),
                         other?.part.flightID ?? 0, p.TargetPort, other?.vessel == v, v.parts.Any(part => part.flightID == p.TargetAnchor))) {
-                        core.GetComputerModule<MechJebModuleDockingAutopilot>().users.Remove(this); core.thrust.ThrustOff();
+                        docking.users.Remove(this); core.thrust.ThrustOff();
                         Change(p, FlightPhase.Unloading); PersistGame();
-                    } else p.Detail = "Native docking: " + core.GetComputerModule<MechJebModuleDockingAutopilot>().status;
+                    } else {
+                        bool replaced = BindFlightTarget(p, v, core, port);
+                        if (replaced || !docking.users.Contains(this) || !docking.enabled) {
+                            docking.users.Remove(this); own.MakeReferenceTransform(); docking.users.Add(this);
+                        }
+                        p.Detail = "Native docking: " + docking.status;
+                    }
                     break;
                 case FlightPhase.Unloading:
                     Transfer(p, v, own);
@@ -521,7 +570,12 @@ namespace RailgunSandbox
                     break;
                 case FlightPhase.Undocking:
                     p.Detail = "Waiting for the stock docking joint to separate";
-                    if (own != null && own.otherNode == null && !v.parts.Any(part => part.flightID == p.TargetAnchor)) {
+                    // Stock ports retain otherNode while Disengage waits for
+                    // physical clearance. Requiring null here deadlocks before
+                    // Returning can apply the RCS departure command.
+                    if (FlightRules.UndockingEvidence(p.CargoTransferred && marker.completedOrder == p.OrderId, own != null,
+                        PortState(own), PortState(own?.otherNode), own?.otherNode?.part.flightID ?? 0, p.TargetPort,
+                        own?.otherNode?.vessel == v || target == v, v.parts.Any(part => part.flightID == p.TargetAnchor))) {
                         v.SetReferenceTransform(marker.part); Change(p, FlightPhase.Returning); PersistGame();
                     }
                     break;
@@ -536,6 +590,10 @@ namespace RailgunSandbox
                     core.rcs.users.Remove(this); Change(p, FlightPhase.Landing);
                     break;
                 case FlightPhase.Landing:
+                    if (v.altitude > home.atmosphereDepth + 1000 && (!armed.TryGetValue(p.VesselId, out var landingArmed) || landingArmed != nameof(FlightPhase.Landing)) &&
+                        recoveryBrakes != null && !recoveryBrakes.ReadyForForecast) {
+                        core.thrust.ThrustOff(); p.Detail = "Preparing native return airbrakes for the trajectory forecast"; return;
+                    }
                     if (v.Splashed) {
                         StopFlight(core); p.Detail = "Splashdown away from recovery pad; pod unavailable and no refit credited";
                         Change(p, FlightPhase.Stranded); PersistGame(); break;
@@ -545,14 +603,14 @@ namespace RailgunSandbox
                         Pad(p, out double lat, out double lon); v.SetReferenceTransform(marker.part);
                         ApplyLandingEngineCompatibility(p, v);
                         if (v.altitude - ground > 1500) RetractLegs(p, v);
-                        RecoveryGuidance.Register(core, home, this, lat, lon, ReentryTestSave && Environment.GetCommandLineArgs().Contains("-railgun-pad-guidance"));
+                        RecoveryGuidance.Register(core, home, this, lat, lon, !p.RecoveryTest || ReentryTestSave && Environment.GetCommandLineArgs().Contains("-railgun-pad-guidance"));
                         foreach (var engine in v.parts.Where(part => p.PartIds.Contains(part.flightID)).SelectMany(part => part.FindModulesImplementing<ModuleEngines>())) engine.Activate();
                         core.target.SetPositionTarget(home, lat, lon); core.landing.deployChutes = false;
                         core.landing.deployGears = true; core.landing.limitGearsStage.val = -1; core.landing.touchdownSpeed.val = .4;
                         core.landing.LandAtPositionTarget(this);
                     }
                     string terminalStatus = RecoveryGuidance.TerminalStatus(core.landing);
-                    p.Detail = terminalStatus.StartsWith("centering /", StringComparison.Ordinal) ? "Home-pad approach: " + terminalStatus : "Powered return to home pad: " + core.landing.status;
+                    p.Detail = terminalStatus.StartsWith("centering /", StringComparison.Ordinal) || terminalStatus.StartsWith("intercept /", StringComparison.Ordinal) ? "Home-pad approach: " + terminalStatus : "Powered return to home pad: " + core.landing.status;
                     if (FlightRules.StableLanding(p, FlightRules.LandingEvidence(v.Landed, v.mainBody == home, 0, v.srfSpeed,
                         v.parts.Count(part => p.PartIds.Contains(part.flightID)), p.OriginalParts), Now)) {
                         int intact = v.parts.Count(part => p.PartIds.Contains(part.flightID));
@@ -1093,6 +1151,8 @@ namespace RailgunSandbox
                 var inspectionPod = StockPods.Vessel(state.Pods[0]);
                 StartCoroutine(DepotInspection.Capture(model, Path.Combine(folder, "DepotInspection.png"), (Vector3)inspectionPod.GetWorldPos3D(), inspectionPod));
             }
+            else if (command == "auto-warp-on") CoastWarpClient.SetEnabled(true);
+            else if (command == "auto-warp-off") CoastWarpClient.SetEnabled(false);
             else if (command == "snapshot") PersistGame();
             else if (command == "save-and-exit") { PersistGame(); Application.Quit(); }
             else throw new InvalidOperationException("Unknown sandbox command");
@@ -1128,12 +1188,18 @@ namespace RailgunSandbox
         }
         void Status()
         {
-            RefreshDeliveryEtas();
+            if(state!=null)RefreshDeliveryEtas();
             var lines = new StringBuilder(network == null ? "Local reusable fleet / native 1x flight\n" : "Luna shared reusable fleet / native 1x flight\n");
             lines.AppendLine("UT=" + Now.ToString("R", CultureInfo.InvariantCulture)); lines.AppendLine("Error=" + error);
             if (network != null) lines.AppendLine("SharedAuthority: ready=" + network.Ready + " player=" + network.Player + " status=" + network.Status);
             lines.AppendLine($"NativeChecks: warp={TimeWarp.CurrentRate:R} fixedDt={TimeWarp.fixedDeltaTime:R} infinitePropellant={CheatOptions.InfinitePropellant} infiniteElectricity={CheatOptions.InfiniteElectricity} ignoreTemperature={CheatOptions.IgnoreMaxTemperature} unbreakableJoints={CheatOptions.UnbreakableJoints} noCrashDamage={CheatOptions.NoCrashDamage}");
+            lines.AppendLine($"AutoWarp: enabled={CoastWarpClient.Enabled} holding={CoastWarpClient.Holding} status={CoastWarpClient.Status}");
+            lines.AppendLine("NativeAirbrakeForecast: "+AirbrakeForecast.Evidence);
             lines.AppendLine("Active=" + FlightGlobals.ActiveVessel?.vesselName);
+            if(state==null) {
+                lines.AppendLine("FleetUnavailable=True");lines.AppendLine("Connection="+(network?.Status??detail));
+                File.WriteAllText(Path.Combine(folder,"RailgunSandbox.status.txt"),lines.ToString());return;
+            }
             if(showcasePivot!=null&&showcaseReference!=null)lines.AppendLine($"InspectionCamera: depotActive={model.Root.activeSelf} targetIndependent={!showcasePivot.transform.IsChildOf(model.Root.transform)} cameraActive={FlightCamera.fetch.mainCamera.gameObject.activeInHierarchy}");
             lines.AppendLine($"Menu: collapsed={menuCollapsed} selectedPod={selectedPod} resource={resource} quantity={quantity} compact={compactMenuPreview}");
             lines.AppendLine($"Selection: anchor={state.SelectedReceiverAnchor} port={state.SelectedReceiverPort}");
@@ -1145,6 +1211,7 @@ namespace RailgunSandbox
             foreach (var p in state.Pods) {
                 var v = StockPods.Vessel(p);
                 lines.AppendLine($"Pod {p.Number}: {p.Phase} / {p.Detail} / id={p.VesselId} / created={p.Created} / cargoTransferred={p.CargoTransferred}");
+                if(airbrakes.TryGetValue(p.Number,out var brakeControl))lines.AppendLine("  airbrakeControl: "+brakeControl.Evidence);
                 lines.AppendLine($"  placement: localSnapshotSettled={StockPods.PlacementSettled(p)} admission={(network==null?"local native snapshot":"server native snapshot")}");
                 if (p.Phase == FlightPhase.Reserved) { var loading = DisplayLoading(p); lines.AppendLine(FormattableString.Invariant($"  loading: stage={loading.Stage} elapsed={loading.Elapsed:F2} clamps={loading.Clamps:F3} pins={loading.Pins:F3} charge={loading.Charge:F3} launchClear={loading.LaunchClear} demoHold={holdLoadingDemo}")); }
                 if (p.Phase == FlightPhase.Reserved && p.LaunchShellRequired) {
@@ -1281,6 +1348,9 @@ namespace RailgunSandbox
             GUI.DragWindow(new Rect(0, 0, 460, 78));
             if (menuCollapsed) return;
             GUILayout.Space(9);
+            GUILayout.BeginHorizontal();
+            if(GUILayout.Button(CoastWarpClient.Enabled?"Auto warp: On":"Auto warp: Off",menu.Button,GUILayout.Width(142),GUILayout.Height(29)))Run(()=>CoastWarpClient.SetEnabled(!CoastWarpClient.Enabled));
+            GUILayout.Label(CoastWarpClient.Status,menu.Small);GUILayout.EndHorizontal();GUILayout.Space(6);
             var target = SelectedReceiver();
             var ports = FreePorts(target).ToList();
             if (state.SelectedReceiverAnchor != 0) selectedPort = state.SelectedReceiverPort;

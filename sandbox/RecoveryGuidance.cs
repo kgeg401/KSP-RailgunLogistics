@@ -11,13 +11,18 @@ namespace RailgunSandbox
     // Only registered logistics-pod landing controllers are affected by the postfix.
     public static class RecoveryGuidance
     {
-        sealed class Registration { public double Radius, Ground, Latitude, Longitude; public object Owner; public MechJebCore Core; public bool TerminalAssist; public string TerminalStatus = "inactive"; }
+        sealed class Registration { public double Radius, Ground, Latitude, Longitude; public object Owner; public MechJebCore Core; public bool TerminalAssist; public string TerminalStatus = "inactive"; public double ApproachEnd=double.NaN; }
         static readonly Dictionary<MechJebModuleLandingAutopilot, Registration> registered = new Dictionary<MechJebModuleLandingAutopilot, Registration>();
         static bool installed, terminalInstalled;
+        static bool OwnsLanding(Vessel vessel)
+        {
+            lock(registered)return registered.Values.Any(r=>r.Core!=null&&r.Core.vessel==vessel);
+        }
         public static void Register(MechJebCore core, CelestialBody body, object owner, double targetLatitude, double targetLongitude, bool terminalAssist = false)
         {
             if (body.bodyName != "Kerbin" || Math.Abs(body.atmosphereDepth - 70000) > 1)
                 throw new InvalidOperationException("The entry envelope is currently calibrated only for the installed 70 km Kerbin atmosphere.");
+            AirbrakeForecast.Install(OwnsLanding);
             if (!installed) {
                 var method = AccessTools.Method(typeof(MechJebModuleLandingAutopilot), "PickDescentSpeedPolicy");
                 if (method == null || method.ReturnType != typeof(IDescentSpeedPolicy))
@@ -58,6 +63,10 @@ namespace RailgunSandbox
         {
             lock (registered) return controller != null && registered.TryGetValue(controller, out var registration) ? registration.TerminalStatus : "inactive";
         }
+        public static bool PoweredApproachActive(MechJebModuleLandingAutopilot controller)
+        {
+            lock(registered)return controller!=null&&registered.TryGetValue(controller,out var r)&&FlightRules.Finite(r.ApproachEnd);
+        }
         static bool TerminalPrefix(MuMech.Landing.FinalDescent __instance, ref AutopilotStep __result)
         {
             var core = __instance.core;
@@ -68,11 +77,40 @@ namespace RailgunSandbox
             if (vessel == null || vessel.LandedOrSplashed || !vessel.loaded || vessel.packed || vessel != FlightGlobals.ActiveVessel) return true;
             var state = core.vesselState;
             Vector3d up = (state.CoM - vessel.mainBody.position).normalized;
-            if (Vector3d.Angle(vessel.ReferenceTransform.up, up) > 60) return true;
             Vector3d north = Vector3d.Exclude(up, vessel.mainBody.GetWorldSurfacePosition(vessel.latitude + .01, vessel.longitude, vessel.altitude) - state.CoM).normalized;
             Vector3d east = Vector3d.Cross(up, north).normalized;
             Vector3d offset = Vector3d.Exclude(up, vessel.mainBody.GetWorldSurfacePosition(registration.Latitude, registration.Longitude, registration.Ground) - state.CoM);
             Vector3d velocity = Vector3d.Exclude(up, vessel.srf_velocity);
+            double clearance = Math.Min(state.altitudeBottom, state.altitudeTrue);
+            double available=Math.Min(state.maxThrustAccel,state.limitedMaxThrustAccel);
+            double ex=Vector3d.Dot(offset,east),ez=Vector3d.Dot(offset,north),vx=Vector3d.Dot(velocity,east),vz=Vector3d.Dot(velocity,north);
+            if(Environment.GetCommandLineArgs().Contains("-railgun-intercept-test")&&clearance>30&&clearance<7000) {
+                double now=Planetarium.GetUniversalTime();
+                if(!FlightRules.Finite(registration.ApproachEnd)) {
+                    Vector3d axis=vessel.ReferenceTransform.up;
+                    double duration=PoweredApproach.Plan(ex,clearance,ez,vx,vessel.verticalSpeed,vz,state.localg,available,
+                        Vector3d.Dot(axis,east),Vector3d.Dot(axis,up),Vector3d.Dot(axis,north),vessel.dynamicPressurekPa>10?15:45);
+                    if(FlightRules.Finite(duration))registration.ApproachEnd=now+duration;
+                }
+                if(FlightRules.Finite(registration.ApproachEnd)) {
+                    double remaining=Math.Max(2,registration.ApproachEnd-now);
+                    var request=PoweredApproach.Command(ex,clearance,ez,vx,vessel.verticalSpeed,vz,state.localg,remaining);
+                    Vector3d acceleration=up*request.Y+east*request.X+north*request.Z;
+                    if(request.Y>0&&FlightRules.Finite(request.Magnitude)&&available>0) {
+                        core.thrust.tmode=MechJebModuleThrustController.TMode.OFF;
+                        core.thrust.trans_kill_h=false;
+                        core.attitude.attitudeTo(acceleration.normalized,AttitudeReference.INERTIAL,registration.Owner);
+                        double alignment=Vector3d.Dot(vessel.ReferenceTransform.up,acceleration.normalized);
+                        // Preserve thrust-axis projection and native gimbal
+                        // authority while aligning; reducing throttle by cos
+                        // stalled the turn against the measured aerodynamic load.
+                        core.thrust.targetThrottle=(float)(alignment>.5?Math.Max(0,Math.Min(1,request.Magnitude/available/alignment)):0);
+                        registration.TerminalStatus=FormattableString.Invariant($"intercept / error={offset.magnitude:F2} m / remaining={remaining:F2} s / requestedAcceleration={request.Magnitude:F2} m/s2 / alignment={alignment:F3}");
+                        __result=__instance;return false;
+                    }
+                }
+            }
+            if (Vector3d.Angle(vessel.ReferenceTransform.up, up) > 60) return true;
             var command = TerminalPadGuidance.Compute(Vector3d.Dot(offset, east), Vector3d.Dot(offset, north),
                 Vector3d.Dot(velocity, east), Vector3d.Dot(velocity, north), Math.Min(state.altitudeBottom, state.altitudeTrue),
                 vessel.verticalSpeed, state.localg, Math.Min(state.maxThrustAccel, state.limitedMaxThrustAccel));
@@ -81,7 +119,6 @@ namespace RailgunSandbox
             // Alternating modes each frame resets MJ's vertical PID and wastes fuel.
             core.thrust.tmode = MechJebModuleThrustController.TMode.KEEP_VERTICAL;
             core.thrust.trans_kill_h = false;
-            double clearance = Math.Min(state.altitudeBottom, state.altitudeTrue);
             double verticalTarget = -(command.SlowDescent ? command.MaximumDescentSpeed : Math.Max(.4, Math.Min(20, clearance / 8)));
             core.thrust.trans_spd_act = (float)verticalTarget;
             double verticalSupport = Math.Max(state.localg, Math.Min(state.limitedMaxThrustAccel, state.localg + (verticalTarget - vessel.verticalSpeed) / 2.5));

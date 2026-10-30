@@ -7,5 +7,6 @@
     <Compile Include="..\..\sandbox\SharedFleet.cs" Link="SharedFleet.cs"/>
     <Compile Include="..\..\sandbox\FlightFleet.cs" Link="FlightFleet.cs"/>
     <Compile Include="..\..\sandbox\DockingPortPolicy.cs" Link="DockingPortPolicy.cs"/>
+    <Compile Include="..\..\sandbox\CoastWarpProtocol.cs" Link="CoastWarpProtocol.cs"/>
   </ItemGroup>
 </Project>

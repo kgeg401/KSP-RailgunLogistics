@@ -21,6 +21,7 @@ namespace RailgunLogisticsServer
         readonly object gate = new object();
         readonly System.Collections.Generic.Dictionary<string, long> missingSince = new System.Collections.Generic.Dictionary<string, long>();
         FleetAuthority authority;
+        CoastWarpService coastWarp;
         public void Start()
         {
             string directory = Path.Combine(ServerContext.UniverseDirectory, "RailgunReusable"); Directory.CreateDirectory(directory);
@@ -30,9 +31,15 @@ namespace RailgunLogisticsServer
             authority = new FleetAuthority(state, next => XmlFile.Save(file, next));
             XmlFile.Save(file, authority.Snapshot());
             if (!LmpModInterface.RegisterModHandler(FleetWire.Channel, Receive)) throw new IOException("Duplicate reusable-fleet handler.");
+            coastWarp=new CoastWarpService(gate,()=>authority.Snapshot(),(client,number)=> {
+                var current=authority.Snapshot();var slot=current.Slots.SingleOrDefault(s=>s.Pod.Number==number);
+                if(slot==null||slot.Pilot!=client.PlayerName||slot.LeaseUntil<=Rules.Now+15||!CoastWarpRules.PhaseAllowed(slot.Pod.Phase)||client.Subspace!=current.Subspace)return false;
+                var facts=Facts(client,new FleetMessage {Number=number},Rules.Now);
+                return facts.OwnsPodUpdate&&facts.PodSnapshotVerified;
+            });coastWarp.Start();
             LunaLog.Normal("[RailgunReusable] Shared two-pod authority ready; native locks, receipts and return checks required.");
         }
-        public void Stop() => LmpModInterface.UnregisterModHandler(FleetWire.Channel);
+        public void Stop() {coastWarp?.Stop();LmpModInterface.UnregisterModHandler(FleetWire.Channel);}
         static string Field(Server.System.Vessel.Classes.Part part, string name) => part?.Fields.GetSingle(name)?.Value;
         static string Module(Server.System.Vessel.Classes.Part part, string module, string key) =>
             part?.Modules.GetAll().FirstOrDefault(m => m.Key == module)?.Value?.GetValue(key)?.Value;

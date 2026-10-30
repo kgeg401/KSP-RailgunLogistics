@@ -72,7 +72,7 @@ def run(arguments):
 
     def copy_evidence(destination):
         destination.mkdir(parents=True, exist_ok=True)
-        for name in ["persistent.sfs", "RailgunReusableFleet.xml", "RailgunSandbox.status.txt", "RecoveryTelemetry.tsv", "LandingEvidence.tsv", "RailLaunchEvidence-v2.tsv"]:
+        for name in ["persistent.sfs", "RailgunReusableFleet.xml", "RailgunSandbox.status.txt", "RecoveryTelemetry.tsv", "LandingEvidence.tsv", "RailLaunchEvidence-v2.tsv", "AirbrakeEvidence.tsv", "AirbrakeEvidence-v2.tsv", "SteeringEvidence.tsv"]:
             path = save / name
             if path.exists():
                 for attempt in range(30):

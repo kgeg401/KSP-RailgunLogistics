@@ -1,5 +1,7 @@
 # Railgun Logistics
 
+**[Auto-warp preview](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.3.6-preview)** adds an Auto warp toggle for safe orbital coasts, including Luna multiplayer. Every player opts in; the pod fast-forwards at up to 100×, slows to 1× and waits for everyone to rejoin the same native timeline. One two-client native pass verified consent, acceleration, slowdown and resumed shared guidance. It requires the matching preview client and server. The ordinary update channel is unchanged. See [usage and verification](docs/Auto-Warp-Validation-2026-10-30.md); complete delivery/return and separate-player docking remain unresolved.
+
 The [0.3.5 multiplayer rail validation](docs/Multiplayer-Rail-Validation-2026-10-29.md) covers the detailed rails/loader, native snapshot dispatch fix, observer animation relay and scene cleanup. Source publication is separate from deployment: the friends host and automatic update channel stay pinned until a matching server/client release is promoted.
 
 Local development: [higher-fidelity accelerator rails](docs/Rail-Assets-2026-10-29.md) adds detailed beams, windings, insulators, service walks and structural supports around the shell-loading experiment. This work is not yet a published multiplayer release.
