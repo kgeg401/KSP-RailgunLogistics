@@ -78,8 +78,44 @@ namespace RailgunSandbox
             return selected.Length == 1 ? modes[selected[0]] : null;
         }
         public static bool Finite(double n) => !double.IsNaN(n) && !double.IsInfinity(n);
+        public static bool ClosedShellRecord(PodRecord p) => p.LaunchShellRequired &&
+            p.LaunchShellPartId != 0 && !p.PartIds.Contains(p.LaunchShellPartId) &&
+            p.LaunchShellOpenedAt == -1 && p.LaunchShellClearAt == -1 &&
+            !p.LaunchShellPanelsReleased && !p.LaunchShellBaseReleased;
+        public static void RearmShell(PodRecord p, uint replacementId)
+        {
+            if (!p.Created || p.Phase != FlightPhase.Refitting || !p.LaunchShellRequired || !p.RailOnlyAscent ||
+                !Finite(p.LaunchShellOpenedAt) || !Finite(p.LaunchShellClearAt) || p.LaunchShellOpenedAt < 0 ||
+                !p.LaunchShellPanelsReleased || !p.LaunchShellBaseReleased || p.LaunchShellClearAt < p.LaunchShellOpenedAt ||
+                replacementId == 0 || replacementId == p.LaunchShellPartId || p.PartIds.Contains(replacementId))
+                throw new InvalidOperationException("A replacement shell requires a returned pod and a new disposable hardware identity.");
+            p.LaunchShellPartId = replacementId;
+            p.LaunchShellOpenedAt = p.LaunchShellClearAt = -1;
+            p.LaunchShellPanelsReleased = p.LaunchShellBaseReleased = false;
+        }
+        public static void UpgradeLegacyShell(PodRecord p, uint newShellId)
+        {
+            if (!p.Created || p.Phase != FlightPhase.Refitting || p.LaunchShellRequired || p.RailOnlyAscent ||
+                p.LaunchShellPartId != 0 || p.LaunchShellPanelsReleased || p.LaunchShellBaseReleased ||
+                p.LaunchShellOpenedAt != -1 || p.LaunchShellClearAt != -1 ||
+                newShellId == 0 || p.PartIds.Contains(newShellId))
+                throw new InvalidOperationException("A legacy pod can receive its first shell only during a physical home-depot refit.");
+            p.LaunchShellRequired = p.RailOnlyAscent = true;
+            p.LaunchShellPartId = newShellId;
+        }
         public static bool SafeOrbit(double periapsis, double eccentricity, double atmosphere) => Finite(periapsis) && Finite(eccentricity) &&
             Finite(atmosphere) && atmosphere >= 0 && eccentricity >= 0 && eccentricity < 1 && periapsis > atmosphere + 3000;
+        public static bool CircularizationComplete(bool executorEnabled, int pendingNodes, double periapsis, double eccentricity, double atmosphere) =>
+            !executorEnabled && pendingNodes == 0 && SafeOrbit(periapsis, eccentricity, atmosphere);
+        public static bool PrivateGuidanceExperiment(string[] args, bool connected, bool multiplayer, string address, int port)
+        {
+            if (args == null || !args.Contains("-railgun-guidance-lab") ||
+                !(args.Contains("-railgun-mp-test") || args.Contains("-railgun-mp-test-b")) ||
+                !connected || !multiplayer || (port != 8817 && port != 8818) ||
+                !System.Net.IPAddress.TryParse(address, out var ip)) return false;
+            if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+            return System.Net.IPAddress.IsLoopback(ip);
+        }
         public static bool Busy(PodRecord p) => p.Phase != FlightPhase.Ready && p.Phase != FlightPhase.Lost && p.Phase != FlightPhase.Stranded && p.Phase != FlightPhase.RecoveryTestComplete;
         public static bool RequiresMainPropellant(FlightPhase phase) => phase == FlightPhase.Ascent || phase == FlightPhase.Rendezvous || phase == FlightPhase.Landing;
         // Native Mainsail starved with .0136 LF/.0163 Ox still reported in its tanks.
@@ -99,6 +135,8 @@ namespace RailgunSandbox
         {
             state.Validate();
             if (!pod.Created || pod.Phase != FlightPhase.Ready) throw new InvalidOperationException("That pod has not returned and refitted.");
+            if (pod.LaunchShellRequired && !ClosedShellRecord(pod))
+                throw new InvalidOperationException("The depot must fit a new closed protective shell before this pod can launch again.");
             if (anchor == 0 || port == 0 || string.IsNullOrWhiteSpace(targetName)) throw new InvalidOperationException("Choose a receiving ship and docking port.");
             if (!Finite(units) || units <= 0 || !Finite(capacity) || units > capacity ||
                 !(resource == "MonoPropellant" || resource == "LiquidFuel" || resource == "Oxidizer"))

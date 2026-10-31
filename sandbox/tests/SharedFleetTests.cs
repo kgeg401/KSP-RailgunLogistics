@@ -15,7 +15,7 @@ var fleet = SharedFleet.New();
 foreach (var slot in fleet.Slots) { slot.Pod.Created = true; slot.Pod.PartIds.AddRange(new uint[] { (uint)(slot.Pod.Number * 10 + 1), (uint)(slot.Pod.Number * 10 + 2) }); slot.Pod.OwnPort = slot.Pod.PartIds[0]; slot.Pod.OriginalParts = 2; }
 SharedFleet disk = null;
 var authority = new FleetAuthority(fleet, state => disk = state);
-var facts = new FleetFacts { Subspace = 2, ReceiverOwned = true, ReceiverReady = true, PodOnPad = true, PodSnapshotVerified = true, OwnsPodUpdate = true, PlacementSettled = true };
+var facts = new FleetFacts { Subspace = 2, ReceiverOwned = true, ReceiverReady = true, PodOnPad = true, PodSnapshotVerified = true, OwnsPodUpdate = true, PlacementSettled = true, RefitSuppliesDurable = true };
 FleetMessage Reserve(int number, uint port = 77) {
     var snapshot = authority.Snapshot(); var slot = snapshot.Slots.Single(s => s.Pod.Number == number);
     var proposed = FleetWire.Copy(slot.Pod);
@@ -147,8 +147,11 @@ Reject(() => authority.Apply("Alice", Commit(1, p => p.CargoTransferred = false)
 Advance(FlightPhase.Undocking, 1006);
 Reject(() => Advance(FlightPhase.Returning, 1007), "A still-attached pod cannot enter its return flight");
 facts.Docked = false; Advance(FlightPhase.Returning, 1007);
-Check(authority.State.Slots[0].Pilot == "" && authority.State.Slots[0].Dispatcher == "Alice", "Undocking releases the receiver's lease for the dispatching pilot to resume");
+Check(authority.State.Slots[0].Pilot == "Alice" && authority.State.Slots[0].Dispatcher == "Alice", "Undocking retains native pilot control until physical port clearance");
+Reject(() => Advance(FlightPhase.Landing,1008),"Separated but still adjacent pod cannot hand off to its return pilot");
+facts.DepartureCleared=true;
 Advance(FlightPhase.Landing, 1008);
+Check(authority.State.Slots[0].Pilot==""&&authority.State.Slots[0].Dispatcher=="Alice","Verified port clearance releases the return handoff without changing dispatcher");
 Reject(() => Advance(FlightPhase.Refitting, 1009), "Pod cannot refit before native home-pad landing");
 facts.LandedAtDepot = true; Advance(FlightPhase.Refitting, 1009); Advance(FlightPhase.Ready, 1010);
 Check(authority.State.Slots[0].Pod.FlightsCompleted == 1 && authority.State.Slots[0].Pod.OrderId == "", "Only the complete landed/refitted sequence releases and credits the pod");
@@ -200,4 +203,94 @@ bool failedWrite = false; try { failing.Apply("Alice", failedRequest, facts, 100
 Check(failedWrite && failing.State.Slots[0].Revision == 0, "Failed storage never commits a volatile reservation");
 bool stopped = false; try { failing.Apply("Alice", failedRequest, facts, 1001); } catch (IOException) { stopped = true; }
 Check(stopped, "Storage failure stops subsequent grants");
+var shellFleet=FleetWire.Copy(fleet);
+var shellSlot=shellFleet.Slots[0];shellSlot.Pod.LaunchShellRequired=true;shellSlot.Pod.LaunchShellPartId=999;
+var shellAuthority=new FleetAuthority(shellFleet,_=>{});
+var shellRequest=FleetWire.Copy(a);shellRequest.Epoch=shellFleet.Epoch;shellRequest.Request=Guid.NewGuid().ToString("N");
+shellRequest.Pod.LaunchShellRequired=true;shellRequest.Pod.LaunchShellPartId=999;shellRequest.Pod.RailOnlyAscent=true;
+var shellFacts=new FleetFacts {Subspace=2,ReceiverOwned=true,ReceiverReady=true,PodOnPad=true,PodSnapshotVerified=true,OwnsPodUpdate=true,PlacementSettled=true,RefitSuppliesDurable=true};
+Reject(()=>shellAuthority.Apply("Alice",shellRequest,shellFacts,1000),"Shell rail reservation requires native shell evidence");
+shellFacts.LaunchShellVerified=true;
+Reject(()=>shellAuthority.Apply("Alice",shellRequest,shellFacts,1000),"Separated shell history cannot substitute for a physically closed shell at dispatch");
+shellFacts.LaunchShellClosedVerified=true;
+var switchedShell=FleetWire.Copy(shellRequest);switchedShell.Request=Guid.NewGuid().ToString("N");switchedShell.Pod.LaunchShellPartId++;
+Reject(()=>shellAuthority.Apply("Alice",switchedShell,shellFacts,1000),"Reservation cannot swap its protective shell identity");
+var shellReserved=shellAuthority.Apply("Alice",shellRequest,shellFacts,1000);
+Check(shellReserved.Slots[0].Pod.RailOnlyAscent,"Verified physical shell retains rail-only mode through server reservation");
+var shellCommit=new FleetMessage {Kind="Commit",Epoch=shellReserved.Epoch,Number=1,Revision=shellReserved.Slots[0].Revision,Lease=shellReserved.Slots[0].Lease,Request=Guid.NewGuid().ToString("N"),Pod=FleetWire.Copy(shellReserved.Slots[0].Pod)};
+FlightRules.Advance(shellCommit.Pod,FlightPhase.RailLaunch,1023);
+Check(shellAuthority.Apply("Alice",shellCommit,shellFacts,1001).Slots[0].Pod.Phase==FlightPhase.RailLaunch,"Native shell-equipped rail launch is accepted in multiplayer");
+// A discarded shell is consumable; the 29-part pod is not. Only a verified
+// home-depot refit can install new shell hardware and reset its release history.
+var returnedShell=FleetWire.Copy(shellAuthority.State);
+var returnedSlot=returnedShell.Slots[0];
+returnedSlot.Pod.Phase=FlightPhase.Refitting;returnedSlot.Pod.PhaseStarted=1100;
+returnedSlot.Pod.CargoTransferred=true;returnedSlot.Pod.LaunchShellOpenedAt=1030;
+returnedSlot.Pod.LaunchShellClearAt=1032;returnedSlot.Pod.LaunchShellPanelsReleased=true;returnedSlot.Pod.LaunchShellBaseReleased=true;
+var refitAuthority=new FleetAuthority(returnedShell,_=>{});
+FleetMessage Refit(Action<PodRecord> change) {
+    var s=refitAuthority.State.Slots[0];var p=FleetWire.Copy(s.Pod);change(p);
+    return new FleetMessage {Kind="Commit",Epoch=refitAuthority.State.Epoch,Number=1,Revision=s.Revision,Lease=s.Lease,Request=Guid.NewGuid().ToString("N"),Pod=p};
+}
+Reject(()=>refitAuthority.Apply("Alice",Refit(p=>FlightRules.Advance(p,FlightPhase.Ready,1110)),shellFacts,1002),"Refuelling without a replacement shell cannot mark a flown pod Ready");
+var replacement=Refit(p=>FlightRules.RearmShell(p,1001));
+shellFacts.LandedAtDepot=false;
+Reject(()=>refitAuthority.Apply("Alice",replacement,shellFacts,1002),"New shell cannot be fitted while away from the home depot");
+shellFacts.LandedAtDepot=true;shellFacts.LaunchShellClosedVerified=false;
+Reject(()=>refitAuthority.Apply("Alice",replacement,shellFacts,1002),"A shell ID supplied by a client is not physical closed-shell evidence");
+shellFacts.LaunchShellClosedVerified=true;
+var refitted=refitAuthority.Apply("Alice",replacement,shellFacts,1002);
+Check(refitted.Slots[0].Pod.PartIds.SequenceEqual(returnedSlot.Pod.PartIds)&&refitted.Slots[0].Pod.LaunchShellPartId==1001&&refitted.Slots[0].Pod.FlightsCompleted==0,
+    "Verified shell replacement preserves all original parts and does not award a landing twice");
+shellFacts.RefitSuppliesDurable=false;
+Reject(()=>refitAuthority.Apply("Alice",Refit(p=>FlightRules.Advance(p,FlightPhase.Ready,1110)),shellFacts,1003),"Ready waits for native fuel and empty cargo persistence after shell acknowledgement");
+Check(refitAuthority.State.Slots[0].Pod.Phase==FlightPhase.Refitting&&refitAuthority.State.Slots[0].Pod.FlightsCompleted==0,"An early Ready request cannot grant reuse or completion credit");
+shellFacts.RefitSuppliesDurable=true;
+refitAuthority.Apply("Alice",Refit(p=>FlightRules.Advance(p,FlightPhase.Ready,1110)),shellFacts,1003);
+Check(refitAuthority.State.Slots[0].Pod.FlightsCompleted==1&&FlightRules.ClosedShellRecord(refitAuthority.State.Slots[0].Pod),"New closed shell permits exactly one completed reuse credit");
+// The installed shared universe contains an old bare pod in flight. A normal
+// update must keep that order and the lost spare intact, then upgrade only on
+// a later physical depot refit.
+var legacyState=FleetWire.Copy(returnedShell);var legacyPod=legacyState.Slots[0].Pod;
+legacyPod.LaunchShellRequired=legacyPod.RailOnlyAscent=false;legacyPod.LaunchShellPartId=0;
+legacyPod.LaunchShellPanelsReleased=legacyPod.LaunchShellBaseReleased=false;
+legacyPod.LaunchShellOpenedAt=legacyPod.LaunchShellClearAt=-1;
+legacyState.Slots[1].Pod.Phase=FlightPhase.Lost;
+string lostBefore=FleetWire.Digest(legacyState.Slots[1].Pod),legacyOrder=legacyPod.OrderId;
+var legacyAuthority=new FleetAuthority(legacyState,_=>{});
+FleetMessage LegacyUpgrade() {
+    var s=legacyAuthority.State.Slots[0];var p=FleetWire.Copy(s.Pod);FlightRules.UpgradeLegacyShell(p,1002);
+    return new FleetMessage {Kind="Commit",Epoch=legacyAuthority.State.Epoch,Number=1,Revision=s.Revision,Lease=s.Lease,Request=Guid.NewGuid().ToString("N"),Pod=p};
+}
+shellFacts.LandedAtDepot=false;
+Reject(()=>legacyAuthority.Apply("Alice",LegacyUpgrade(),shellFacts,1004),"Legacy upgrade cannot happen away from the physical depot");
+shellFacts.LandedAtDepot=true;shellFacts.LaunchShellClosedVerified=false;
+Reject(()=>legacyAuthority.Apply("Alice",LegacyUpgrade(),shellFacts,1004),"Legacy upgrade requires an actual verified closed shell");
+shellFacts.LaunchShellClosedVerified=true;
+var upgraded=legacyAuthority.Apply("Alice",LegacyUpgrade(),shellFacts,1004);
+Check(upgraded.Slots[0].Pod.PartIds.SequenceEqual(legacyPod.PartIds)&&upgraded.Slots[0].Pod.VesselId==legacyPod.VesselId&&
+    upgraded.Slots[0].Pod.OrderId==legacyOrder&&upgraded.Slots[0].Pod.FlightsCompleted==legacyPod.FlightsCompleted&&upgraded.Slots[0].Pod.Phase==FlightPhase.Refitting,
+    "First shell upgrade preserves original vessel, structure, active order and flight count until refit completes");
+Check(FleetWire.Digest(upgraded.Slots[1].Pod)==lostBefore,"Legacy migration cannot reconstruct or reset the lost spare");
+foreach(var phase in new[]{FlightPhase.Rendezvous,FlightPhase.Landing,FlightPhase.Lost,FlightPhase.Stranded,FlightPhase.Ready}) {
+    var airborneLegacy=FleetWire.Copy(legacyPod);airborneLegacy.Phase=phase;
+    Reject(()=>FlightRules.UpgradeLegacyShell(airborneLegacy,1003),"A "+phase+" legacy pod cannot receive offline migration hardware");
+}
+var wrongLegacyId=FleetWire.Copy(legacyPod);
+Reject(()=>FlightRules.UpgradeLegacyShell(wrongLegacyId,wrongLegacyId.PartIds[0]),"Legacy shell cannot replace an original structural identity");
+Reject(()=>FlightRules.RearmShell(refitAuthority.State.Slots[0].Pod,1002),"Ready pods cannot exchange shell identities outside refitting");
+var midflight=FleetWire.Copy(returnedSlot.Pod);midflight.Phase=FlightPhase.Landing;
+Reject(()=>FlightRules.RearmShell(midflight,1002),"An airborne or still-landing pod cannot reset shell separation history");
+var badIdentity=FleetWire.Copy(returnedSlot.Pod);
+Reject(()=>FlightRules.RearmShell(badIdentity,badIdentity.PartIds[0]),"A disposable shell cannot reuse an original structural part ID");
+Reject(()=>FlightRules.RearmShell(badIdentity,badIdentity.LaunchShellPartId),"A spent shell cannot be relabelled as replacement hardware");
+var unavailableShell=FleetWire.Copy(returnedSlot.Pod);unavailableShell.Phase=FlightPhase.Ready;unavailableShell.OrderId="";
+var unavailableFleet=new FleetState {Pods=new System.Collections.Generic.List<PodRecord>{unavailableShell,FleetWire.Copy(returnedShell.Slots[1].Pod)}};
+Reject(()=>FlightRules.Reserve(unavailableFleet,unavailableShell,66,77,"Station","MonoPropellant",100,120,1200,true),"Local dispatch also blocks a Ready legacy pod whose shell was spent");
+var shellViewState=FleetWire.Copy(reserved);shellViewState.Slots[0].Pod.LaunchShellRequired=true;
+var shellView=FleetWire.Copy(visual);shellView.LoadingShellStage=2;shellView.LoadingShellGrip=1;
+visualFacts.OwnsPodUpdate=true;
+Check(LoadingViewRules.Accept(shellViewState,"Alice",shellView,visualFacts,1001),"Pilot shell grip and stage can relay to observers");
+shellView.LoadingShellGrip=double.NaN;
+Check(!LoadingViewRules.Accept(shellViewState,"Alice",shellView,visualFacts,1001),"Invalid shell grip cannot reach observer artwork");
 Console.WriteLine($"PASS {count} shared-fleet authority checks. Native multiplayer flight is not established by these checks.");

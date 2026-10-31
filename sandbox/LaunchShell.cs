@@ -24,13 +24,17 @@ namespace RailgunSandbox
         public static void ValidateClosed(PodRecord p, Vessel v)
         {
             if (!p.LaunchShellRequired) return;
+            if (!ClosedPhysical(p, v))
+                throw new InvalidOperationException("Launch requires a closed physical protective shell and a rail-only ascent.");
+        }
+        public static bool ClosedPhysical(PodRecord p, Vessel v)
+        {
             var shell = v.parts.SingleOrDefault(part => part.flightID == p.LaunchShellPartId);
             var fairing = shell?.FindModuleImplementing<ModuleProceduralFairing>();
-            if (!p.RailOnlyAscent || p.LaunchShellOpenedAt >= 0 || p.LaunchShellPanelsReleased || p.LaunchShellBaseReleased ||
-                fairing == null || fairing.GetScalar > .5f || fairing.Panels == null || fairing.Panels.Count == 0 ||
-                v.parts.Count(part => p.PartIds.Contains(part.flightID) && part.ShieldedFromAirstream) != p.OriginalParts ||
-                shell.FindModuleImplementing<ModuleDecouple>()?.isDecoupled != false)
-                throw new InvalidOperationException("Launch requires a closed physical protective shell and a rail-only ascent.");
+            return p.RailOnlyAscent && FlightRules.ClosedShellRecord(p) &&
+                fairing != null && fairing.GetScalar <= .5f && fairing.Panels != null && fairing.Panels.Count > 0 &&
+                v.parts.Count(part => p.PartIds.Contains(part.flightID) && part.ShieldedFromAirstream) == p.OriginalParts &&
+                shell.FindModuleImplementing<ModuleDecouple>()?.isDecoupled == false;
         }
 
         public static void Profile(ConfigNode node, double payloadHeight)

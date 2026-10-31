@@ -7,11 +7,16 @@ namespace RailgunSandbox
     public static class ReentryEnvelope
     {
         static readonly double[] Altitudes = { 0, 10000, 20000, 30000, 40000, 50000, 60000, 70000, 80000 };
-        // Retracted LT-2 entry measured only .43 of the native heat limit in attempt05.
-        // The former thin-air braking corridor exhausted propulsion before touchdown.
-        // Retain a cap below the observed 2100 m/s / 23 km failure, but use denser air
-        // to dissipate energy before the terrain-aware terminal stopping envelope.
-        static readonly double[] Speeds = { 800, 1100, 1750, 2000, 2250, 2400, 2700, 3000, 3200 };
+        // Full-profile two-owner attempt07 reached ~2080 m/s at36km with the
+        // retracted LT-2 skins already at .73 of their thermal limit. Two legs
+        // then overheated before20km, despite normal retrograde control and
+        // >2000 liquid fuel remaining. Brake before that observed corridor.
+        // The first conservative revision survived entry at .389 peak heat,
+        // but left insufficient terminal fuel. Retain earlier braking than07
+        // while testing a modest relaxation against warm native replays.
+        // Provisional until repeated native entry AND fuel-to-touchdown checks;
+        // never substitute a cold fixture or add propellant to pass this policy.
+        static readonly double[] Speeds = { 500, 800, 1200, 1550, 1850, 2100, 2400, 2800, 3200 };
         public static double SpeedCeiling(double altitude)
         {
             if (!FlightRules.Finite(altitude)) throw new InvalidOperationException("Invalid entry altitude.");

@@ -13,7 +13,7 @@ namespace RailgunSandbox
     [KSPAddon(KSPAddon.Startup.MainMenu, true)]
     public sealed class MultiplayerValidation : MonoBehaviour
     {
-        bool enabledTest, connected, tracking, flying, splitIssued;
+        bool enabledTest, connected, tracking, flying, splitIssued, guidanceConfigured;
         string originalPlayer;
         float next;
         float stationReadyAt;
@@ -27,16 +27,31 @@ namespace RailgunSandbox
             if (!SettingsSystem.CurrentSettings.DisclaimerAccepted) { Debug.LogError("[RailgunMPTest] Accept the existing Luna disclaimer before testing."); yield break; }
             originalPlayer = SettingsSystem.CurrentSettings.PlayerName;
             SettingsSystem.CurrentSettings.PlayerName = Environment.GetCommandLineArgs().Contains("-railgun-mp-test-b") ? "RG-Test-B" : "RG-Test-A";
-            MainSystem.CommandLineServer = new ServerEntry { Address = "127.0.0.1", Port = 8817 };
+            int port=8817;
+            var explicitPort=Environment.GetCommandLineArgs().SingleOrDefault(arg=>arg.StartsWith("-railgun-mp-port=",StringComparison.Ordinal));
+            if(explicitPort!=null&&(!int.TryParse(explicitPort.Substring("-railgun-mp-port=".Length),out port)||port!=8817&&port!=8818))
+                throw new InvalidOperationException("Private validation permits only loopback ports8817 or8818.");
+            MainSystem.CommandLineServer = new ServerEntry { Address = "127.0.0.1", Port = (ushort)port };
             Application.runInBackground = true;
         }
         void Update()
         {
             if (!enabledTest || Time.realtimeSinceStartup < next) return; next = Time.realtimeSinceStartup + 1;
             string directory = Path.Combine(KSPUtil.ApplicationRootPath, "Railgun-MP-Test"); Directory.CreateDirectory(directory);
-            File.WriteAllText(Path.Combine(directory, "status.txt"), "network=" + MainSystem.NetworkState + " scene=" + HighLogic.LoadedScene +
-                " save=" + HighLogic.SaveFolder + " active=" + FlightGlobals.ActiveVessel?.vesselName + " controller=" + (SandboxFlight.Instance != null));
+            var active=FlightGlobals.ActiveVessel;
+            bool inspectLocks=NetworkFleet.Connected&&HighLogic.LoadedSceneIsFlight&&active!=null;
+            bool nativeControl=inspectLocks&&LmpClient.Systems.Lock.LockSystem.LockQuery.ControlLockBelongsToPlayer(active.id,SettingsSystem.CurrentSettings.PlayerName);
+            bool nativeUpdate=inspectLocks&&LmpClient.Systems.Lock.LockSystem.LockQuery.UpdateLockBelongsToPlayer(active.id,SettingsSystem.CurrentSettings.PlayerName);
+            AtomicStatusFile.TryWrite(Path.Combine(directory, "status.txt"), "network=" + MainSystem.NetworkState + " scene=" + HighLogic.LoadedScene +
+                " save=" + HighLogic.SaveFolder + " active=" + active?.vesselName + " controller=" + (SandboxFlight.Instance != null)+
+                " nativeControl="+nativeControl+" nativeUpdate="+nativeUpdate);
             if (NetworkFleet.Connected) connected = true;
+            if(!guidanceConfigured&&RecoveryGuidance.PrivateLoopbackEligible) {
+                RecoveryGuidance.SetIsolatedApproachSpeed(120,true,false,2000,1,0,false,true,true);
+                File.WriteAllText(Path.Combine(directory,"guidance-lab.txt"),
+                    "loopbackEndpointVerified=true\nmode=route120-native-entry2000-vertical-corridor\nproductionDefaultsChanged=false\n");
+                guidanceConfigured=true;
+            }
             if(NetworkFleet.Shared.Ready&&SandboxFlight.Instance!=null) {
                 var owned=typeof(SandboxFlight).GetField("model",System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic)?.GetValue(SandboxFlight.Instance) as DepotModel;
                 foreach(var pod in NetworkFleet.Shared.Local.Pods.Where(p=>p.Phase==FlightPhase.Reserved)) {
@@ -102,6 +117,20 @@ namespace RailgunSandbox
                     File.Delete(command);
                     Debug.Log("[RailgunMPTest] Native new-subspace recovery test; no pose, velocity, fuel or clock edit.");
                     WarpSystem.Singleton.CurrentSubspace = -1;
+                }
+                else if (action == "sync-latest" && NetworkFleet.Connected && HighLogic.LoadedSceneIsFlight) {
+                    File.Delete(command);
+                    var vessel=FlightGlobals.ActiveVessel;
+                    var warp=WarpSystem.Singleton;
+                    bool safe=vessel!=null&&(vessel.LandedOrSplashed?vessel.srfSpeed<.1:
+                        vessel.altitude>vessel.mainBody.atmosphereDepth+30000&&vessel.orbit.PeA>vessel.mainBody.atmosphereDepth+10000);
+                    if(safe&&TimeWarp.CurrentRate==1&&warp.CurrentSubspace>=0&&warp.Subspaces.TryGetValue(warp.CurrentSubspace,out double currentTime)) {
+                        var future=warp.Subspaces.Where(s=>s.Key>=0&&s.Value>currentTime).OrderByDescending(s=>s.Value).FirstOrDefault();
+                        if(future.Value>currentTime) {
+                            Debug.Log("[RailgunMPTest] Explicit safe native sync to future subspace "+future.Key+"; no vessel/resource edit.");
+                            warp.SyncToSubspace(future.Key);
+                        }
+                    }
                 }
             }
         }

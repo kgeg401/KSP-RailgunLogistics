@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
     <KspRoot Condition="'$(KspRoot)'==''">$(MSBuildThisFileDirectory)../Kerbal Space Program</KspRoot>

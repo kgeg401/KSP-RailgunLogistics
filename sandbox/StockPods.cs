@@ -14,6 +14,10 @@ namespace RailgunSandbox
         [KSPField(isPersistant = true)] public string couplerType = "size1";
         [KSPField(isPersistant = true)] public uint couplerPartId;
         [KSPField(isPersistant = true)] public string couplerHardwareKey = "";
+        [KSPField(isPersistant = true)] public uint replacementShellPartId;
+        [KSPField(isPersistant = true)] public double replacementShellCreatedAt = -1;
+        [KSPField(isPersistant = true)] public string departureOrder = "";
+        [KSPField(isPersistant = true)] public double departurePortClearance = -1;
         public override void OnStart(StartState state)
         {
             base.OnStart(state);
@@ -189,6 +193,45 @@ namespace RailgunSandbox
             vessel.isPersistent = true; record.Created = true; record.OriginalParts = originalCount;
             Debug.Log("[RailgunSandbox] Created unique stock assembly " + record.Number + " / " + record.VesselId + " / parts " + specs.Count);
             return vessel;
+        }
+        public static Part AttachReplacementShell(PodRecord record, Vessel vessel)
+        {
+            if (record.Phase != FlightPhase.Refitting || !vessel.loaded || vessel.packed ||
+                !vessel.Landed || vessel.srfSpeed > .2 || !OriginalPartsIntact(record, vessel) ||
+                vessel.parts.Count != record.OriginalParts)
+                throw new InvalidOperationException("Shell construction requires the intact returned pod settled at its home depot.");
+            var engine = vessel.parts.Single(part => record.PartIds.Contains(part.flightID) && part.FindModuleImplementing<ModuleEngines>() != null);
+            var mount = engine.FindAttachNode("bottom") ?? throw new InvalidOperationException("Pod engine has no shell mounting node.");
+            if (mount.attachedPart != null) throw new InvalidOperationException("The shell mounting node is occupied.");
+            var shellTop = Node(LaunchShell.PartName, "top");
+            var rotation = engine.transform.rotation;
+            var position = engine.transform.TransformPoint(mount.position) - rotation * shellTop;
+            var spec = new Spec { Name = LaunchShell.PartName, Parent = vessel.parts.IndexOf(engine),
+                Position = vessel.transform.InverseTransformPoint(position), Rotation = Quaternion.Inverse(vessel.transform.rotation) * rotation };
+            spec.Nodes["top"] = spec.Parent;
+            var node = PartNode(spec, vessel.parts.Count, record);
+            double top = vessel.parts.Where(part => record.PartIds.Contains(part.flightID))
+                .Max(part => Vector3.Dot(part.transform.position - position, rotation * Vector3.up) + 2);
+            LaunchShell.Profile(node, top);
+            var snapshot = new ProtoPartSnapshot(node, vessel.protoVessel, HighLogic.CurrentGame);
+            var shell = snapshot.CreatePart() ?? throw new InvalidOperationException("Native shell construction failed.");
+            shell.partInfo = Prefab(LaunchShell.PartName).partInfo;
+            shell.isAttached = true;
+            shell.physicalSignificance = Part.PhysicalSignificance.FULL;
+            shell.transform.rotation = rotation;
+            shell.transform.position = position;
+            var ownMount = shell.FindAttachNode("top") ?? throw new InvalidOperationException("New shell has no engine attachment node.");
+            ownMount.attachedPart = engine; mount.attachedPart = shell;
+            shell.attPos0 = spec.Position; shell.attRotation0 = spec.Rotation;
+            NativeShellConstruction.Register(shell);
+            // Native construction assigns the new flight ID, joint, module
+            // startup, collision exclusions and vessel-change notifications.
+            // Only the new consumable part is positioned; the pod is untouched.
+            shell.OnAttachFlight(engine);
+            snapshot.flightID = shell.flightID;
+            if (shell.vessel != vessel || shell.parent != engine || record.PartIds.Contains(shell.flightID))
+                throw new InvalidOperationException("Native shell attachment did not preserve the pod assembly.");
+            return shell;
         }
         public static RailgunFlightPod Marker(PodRecord record) => FlightGlobals.Vessels.Where(v => v != null && v.loaded)
             .SelectMany(v => v.parts).Select(p => p.FindModuleImplementing<RailgunFlightPod>()).FirstOrDefault(m => m?.fleetId == record.VesselId);

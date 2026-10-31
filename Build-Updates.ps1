@@ -68,6 +68,11 @@ foreach($f in Get-ChildItem -LiteralPath $client -File -Recurse | Sort-Object Fu
 }
 $xml.Save((Join-Path $out 'friends.xml'))
 Copy-Item -LiteralPath (Join-Path $out 'friends.xml') -Destination (Join-Path $client 'InstalledRelease.xml')
-foreach($f in @('README-Updates.md','LICENSE')) { Copy-Item -LiteralPath (Join-Path $root $f) -Destination $bundle }
+foreach($f in @('README.md','README-Updates.md','CHANGELOG.md','LICENSE')) { Copy-Item -LiteralPath (Join-Path $root $f) -Destination $bundle }
+$validation=Join-Path $root "docs\Release-$BundleVersion-Validation.md"
+if(Test-Path -LiteralPath $validation) {
+    $documentation=Join-Path $bundle 'docs'; New-Item -ItemType Directory -Path $documentation -Force | Out-Null
+    Copy-Item -LiteralPath $validation -Destination $documentation
+}
 [IO.Compression.ZipFile]::CreateFromDirectory($bundle,(Join-Path $out "RailgunLogistics-$BundleVersion.zip"))
 Write-Output "Built $out. Not published or installed."

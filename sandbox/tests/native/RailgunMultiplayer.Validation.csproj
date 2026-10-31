@@ -16,5 +16,8 @@
     <Compile Include="AirbrakeForceOracle.cs" />
     <Compile Include="AuthorityTransitionProbe.cs" />
     <Compile Include="SteeringProbe.cs" />
+    <Compile Include="DescentFixtureLab.cs" />
+    <Compile Include="OrbitalFixtureLab.cs" />
+    <Compile Include="RendezvousFixtureLab.cs" />
   </ItemGroup>
 </Project>

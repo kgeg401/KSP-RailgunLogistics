@@ -22,6 +22,20 @@ PHASES = ["Ready", "Reserved", "RailLaunch", "Ascent", "Rendezvous", "Docking", 
 CHEATS = ["infinitePropellant", "infiniteElectricity", "ignoreTemperature", "unbreakableJoints", "noCrashDamage"]
 
 
+def private_endpoint(directory, manifest):
+    port=manifest.get("port")
+    if port not in (8817,8818):return False
+    expected=manifest.get("serverConnectionSHA256")
+    # Preserve the historical 8817-only audit boundary; new 8818 evidence
+    # requires a pinned actual server configuration, not a claimed port.
+    if not expected:return port==8817
+    raw=(Path(directory)/"server-connection.xml").read_bytes()
+    if hashlib.sha256(raw).hexdigest()!=expected:return False
+    text=raw.decode("utf-16") if raw.startswith((b"\xff\xfe",b"\xfe\xff")) else raw.decode("utf-8-sig")
+    root=ET.fromstring(text)
+    return root.findtext("ListenAddress")=="127.0.0.1" and root.findtext("Port")==str(port) and root.findtext("Upnp")=="false"
+
+
 def pods(path):
     root = ET.parse(path).getroot()
     return root.findall("Slots/FleetSlot/Pod")
@@ -104,6 +118,63 @@ def vessel_fields(text):
     return fields(next(nodes("VESSEL", lines), lines))
 
 
+def initial_assembly(pod, text):
+    parts = native_parts(text)
+    original = ids(pod)
+    expected = set(original)
+    if pod.findtext("LaunchShellRequired") == "true":
+        shell = int(pod.findtext("LaunchShellPartId", "0"))
+        if shell <= 0 or shell in original or shell not in parts or fields(parts[shell]).get("name") != "krlLaunchShell":
+            return False
+        expected.add(shell)
+    return bool(original) and len(original) == int(pod.findtext("OriginalParts", "0")) and parts.keys() == expected
+
+
+def require_fresh_depot(directory, initial):
+    """Reject incomplete construction before spending time on a flight."""
+    if len(initial) != 2 or any(p.findtext("Phase") != "Ready" or p.findtext("OrderId", "") or p.findtext("Created") != "true" for p in initial):
+        raise ValueError("Fresh acceptance requires two constructed, unused Ready pods")
+    for pod in initial:
+        text = vessel(directory, pod.findtext("VesselId"))
+        native = vessel_fields(text)
+        if not initial_assembly(pod, text):
+            raise ValueError("Fresh native pod identity/assembly is incomplete")
+        if native.get("sit") != "LANDED" or native.get("landed") != "True":
+            raise ValueError("Fresh native pods must finish actual ground contact before dispatch")
+        markers = [fields(node) for part in native_parts(text).values() for node in nodes("MODULE", part)
+                   if fields(node).get("name") == "RailgunFlightPod" and fields(node).get("fleetId") == pod.findtext("VesselId")]
+        if len(markers) != 1 or markers[0].get("placementSettled") != "True":
+            raise ValueError("Fresh native construction must be settled in the same authoritative snapshot as ground contact")
+
+
+def final_assembly(pod, text):
+    if pod.findtext("LaunchShellRequired") == "true" and pod.findtext("LaunchShellBaseReleased") == "true":
+        # Discarded shell must stay absent; the unflown spare retains its exact
+        # declared closed shell, which initial_assembly validates separately.
+        return bool(ids(pod)) and len(ids(pod)) == int(pod.findtext("OriginalParts", "0")) and native_parts(text).keys() == ids(pod)
+    return initial_assembly(pod, text)
+
+
+def shell_rearmed(initial, final, text, samples):
+    """Require physical replacement, not a Ready counter on a bare flown pod."""
+    if initial.findtext("LaunchShellRequired") != "true":
+        return True
+    shell_id = int(final.findtext("LaunchShellPartId", "0"))
+    if not (final.findtext("LaunchShellRequired") == "true" and shell_id > 0 and
+            shell_id != int(initial.findtext("LaunchShellPartId", "0")) and shell_id not in ids(initial) and
+            final.findtext("LaunchShellPanelsReleased") == "false" and final.findtext("LaunchShellBaseReleased") == "false" and
+            float(final.findtext("LaunchShellOpenedAt", "nan")) == -1 and float(final.findtext("LaunchShellClearAt", "nan")) == -1):
+        return False
+    parts = native_parts(text)
+    if not initial_assembly(final, text):
+        return False
+    fairing = module(parts[shell_id], "ModuleProceduralFairing")
+    release = module(parts[shell_id], "ModuleDecouple")
+    return fairing.get("fsm") == "st_idle" and fairing.get("isCapped") == "True" and release.get("isDecoupled") == "False" and any(
+        r["pod"] == "1" and r["phase"] == "Ready" and int(r["shellId"]) == shell_id and r["shellPresent"] == "True" and
+        int(r["panels"]) > 0 and int(r["shielded"]) == int(r["originals"]) == len(ids(initial)) for r in samples)
+
+
 def home_distance(before, after):
     a, b = vessel_fields(before), vessel_fields(after)
     lat1, lat2 = math.radians(float(a["lat"])), math.radians(float(b["lat"]))
@@ -118,7 +189,8 @@ def audit(directory):
     report = {"success": False, "fullLogisticsRoundTrip": False, "checks": checks}
     try:
         manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8-sig"))
-        checks["freshNativeMission"] = manifest["mode"] == "fresh-native" and manifest["diagnostic"] is False and manifest["port"] == 8817
+        checks["freshNativeMission"] = manifest["mode"] == "fresh-native" and manifest["diagnostic"] is False and manifest["port"] in (8817,8818)
+        checks["privateEndpointPreserved"] = private_endpoint(directory,manifest)
         initial_file = directory / "initial/Fleet.xml"
         checks["pinnedInitialFleet"] = hashlib.sha256(initial_file.read_bytes()).hexdigest() == manifest["initialFleetSHA256"]
         initial, final = pods(initial_file), pods(directory / "final/Fleet.xml")
@@ -174,12 +246,16 @@ def audit(directory):
             checks[client + "UninterruptedNativeClock"] = clock(times, [sample["elapsed"] for sample in samples])
         native = []
         orientation = []
+        shell_samples = []
         transactions = []
         accepted = []
         for client in ("A", "B"):
             root = directory / ("client-" + client)
             native.extend(dict(r, client=client) for r in tsv(root / "roundtrip/native.tsv"))
             orientation.extend(tsv(root / "roundtrip/orientation.tsv"))
+            shell_trace = root / "roundtrip/shell-hardware.tsv"
+            if shell_trace.exists():
+                shell_samples.extend(tsv(shell_trace))
             transactions.extend(delivery_audit(p.parent) for p in (root / "roundtrip/transactions").glob("*/transaction.tsv"))
             landing = root / "LandingEvidence.tsv"
             if landing.exists():
@@ -202,14 +278,15 @@ def audit(directory):
             initial_native = vessel(directory / "initial", p.findtext("VesselId"))
             parts = native_parts(text)
             root_fields = vessel_fields(text)
-            checks["pod" + str(index + 1) + "PhysicallyHomeAndIntact"] = parts.keys() == ids(p) and root_fields.get("sit") == "LANDED" and root_fields.get("landed") == "True" and fields(next(nodes("ORBIT", text.splitlines()))).get("REF") == "1" and home_distance(initial_native, text) <= 25
-            checks["pod" + str(index + 1) + "StartedIntactAtHome"] = native_parts(initial_native).keys() == ids(p) and vessel_fields(initial_native).get("sit") == "LANDED"
+            checks["pod" + str(index + 1) + "PhysicallyHomeAndIntact"] = ids(p) == ids(initial[index]) and final_assembly(p, text) and root_fields.get("sit") == "LANDED" and root_fields.get("landed") == "True" and fields(next(nodes("ORBIT", text.splitlines()))).get("REF") == "1" and home_distance(initial_native, text) <= 25
+            checks["pod" + str(index + 1) + "StartedIntactAtHome"] = initial_assembly(p, initial_native) and vessel_fields(initial_native).get("sit") == "LANDED" and vessel_fields(initial_native).get("landed") == "True"
             if index == 0:
                 cargo = resources(parts[cargo_part])[dispatched.findtext("Resource")]
                 markers = [module(part, "RailgunFlightPod") for part in parts.values() if any(fields(n).get("name") == "RailgunFlightPod" for n in nodes("MODULE", part))]
                 checks["emptyLockedCargoAndNativeReceiptPersist"] = cargo[0] == 0 and not cargo[2] and len(markers) == 1 and markers[0].get("completedOrder") == order
                 propulsion = [r for part in parts.values() if fields(part).get("name") not in {"krlReusableMonoCargo", "krlReusableFuelCargo"} for name, r in resources(part).items() if name in {"LiquidFuel", "Oxidizer", "MonoPropellant", "ElectricCharge"}]
                 checks["actuallyRefitted"] = bool(propulsion) and all(abs(r[0] - r[1]) < 1e-6 for r in propulsion)
+                checks["physicalProtectiveShellRearmed"] = shell_rearmed(initial[index], p, text, shell_samples)
         report.update(order=order, delivery=transactions, nativeSamples=len(owned), peakHeatRatio=max(float(r["heatRatio"]) for r in owned))
         report["success"] = report["fullLogisticsRoundTrip"] = all(checks.values())
     except Exception as error:

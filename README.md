@@ -1,73 +1,53 @@
-# Railgun Logistics
+# Railgun Logistics — 0.3.7 alpha
 
-**[Download 0.3.6 shared auto-warp alpha](https://github.com/kgeg401/KSP-RailgunLogistics/releases/download/v0.3.6-preview/RailgunLogistics-0.3.6.zip).** The matching shared server and reusable-client update channel now use this build. Every player enables **Auto warp: On** in the menu; the pod fast-forwards safe orbital coasts at up to 100×, slows to 1× and waits for everyone to rejoin the same native timeline. The final two-client native pass verified consent, acceleration, slowdown and resumed shared guidance. See [usage and verification](docs/Auto-Warp-Validation-2026-10-30.md). Complete delivery/return and separate-player docking remain unresolved.
+A two-pod logistics depot for **KSP 1.12.5 with Luna Multiplayer 0.29.2**. The pods physically launch, fly to a ship in Kerbin orbit, dock, deliver fuel, return, land and prepare for reuse.
 
-The [0.3.5 multiplayer rail validation](docs/Multiplayer-Rail-Validation-2026-10-29.md) covers the detailed rails/loader, native snapshot dispatch fix, observer animation relay and scene cleanup. Those reports predate the matching 0.3.6 deployment.
+Use the playable mod ZIP from [Releases](https://github.com/kgeg401/KSP-RailgunLogistics/releases). GitHub's source ZIP does not include the compiled mod. Every player and the host need the matching release; the published update channel determines which build is offered automatically.
 
-Local development: [higher-fidelity accelerator rails](docs/Rail-Assets-2026-10-29.md) adds detailed beams, windings, insulators, service walks and structural supports around the shell-loading experiment. This work is not yet a published multiplayer release.
+## Using the depot
 
-The [rail and loader follow-up](docs/Rail-Loader-Checkpoint-2026-10-29.md) refines the windings, collars and hydraulic hardware, adds bounded distance detail, checks full-face clearance and fixes the inspection camera lifecycle.
+1. Enter flight on your receiving ship in stable Kerbin orbit.
+2. Open **Railgun Logistics** with its toolbar icon, or right-click the receiving docking port and choose **Request railgun supplies**.
+3. Select the exact port, fuel and amount, then send an available pod. On a new depot, use **Set up depot** once to create its two persistent pods.
+4. Let the physical flight finish. Cargo transfers only after native docking. The pod then undocks, returns and refits before becoming available again.
 
-The earlier **[0.3.4 mechanical loading preview](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.3.4)** introduced the traveling hoist, hydraulic collars, locking pins, charge lights and mechanical sound. Its report records the parked-pod reload failure and the channel hold at that checkpoint. See [loading verification](docs/Mechanical-Loading-Checkpoint.md) for historical evidence.
+**Close the panel completely with × or switch its toolbar icon off.** It starts hidden, can be reopened with the toolbar, and stays hidden across vessel changes after you close it. Hiding the panel does not cancel an active delivery.
 
-The previous [0.3.2 reusable-pod alpha](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.3.2) remains available for rollback. Use [installation and automatic updates](README-Updates.md) for the current shared build and migration instructions. Players keep their existing KSP and Luna client.
+For automatic coast warp, every connected player enables **Auto warp: On**. The clients agree on safe orbital coasts, slow down and rejoin the same Luna timeline before guidance continues. Launch, docking and atmospheric recovery remain at normal physics speed.
 
-The ETA becomes available when native guidance has a usable encounter or docking approach. It uses game time and reports calculating when there is no reliable plan. Experimental rail-only launches and precision landing work are documented in [the October 28 checkpoint](docs/Launch-Landing-Checkpoint.md); they remain disabled in ordinary and Luna dispatches.
+## What 0.3.7 changes
 
-The additional cubic-intercept, adaptive-airbrake and Luna coupling-camera experiments remain disabled by default. Protective-shell and long-guide experiments remain isolated development features. Their presence in source does not establish recovery reliability.
+- Uses the verified native approach and vertical-capture return configuration in normal logistics flights.
+- Enables the scoped Luna docking adapter without special test launch arguments.
+- Keeps the physical shell, mechanical loading sequence, rail-only ascent and separate circularization burn.
+- Waits for saved native fuel and empty cargo tanks before acknowledging a completed refit.
+- Fits an older surviving pod with its first shell only after it physically returns to the depot. Original vessel IDs and delivery history are retained; lost pods are not regenerated.
+- Adds a full menu close control and fixes the toolbar's off action.
 
-Two native clients have shared a flight through launch, powered ascent and stable orbit. Complete multiplayer docking, delivery and return remain unverified. Kerbin-orbit receivers are supported; control stays at 1× except for the agreed native coast-warp handoff. The earlier [0.2.3 assisted-docking download](https://github.com/kgeg401/KSP-RailgunLogistics/releases/tag/v0.2.3) remains available; the sections below describe that older service retained for compatibility.
+## Installation and updates
 
-Kerbin emergency supplies for KSP 1.12.5/build3190 and Luna Multiplayer0.29.2. Built for Kgeg4 with Codex; code and procedural visuals are AI-assisted original work. Requires the already-installed ModuleManager and Luna client. This package contains no KSP assets or game assemblies; its launcher references a stock model on your own install.
+Requirements: Windows, KSP 1.12.5/build 3190, Luna 0.29.2, ModuleManager, MechJeb 2.14.3 and Harmony 2.2.1 from your matching mod pack. The download contains this mod, not those dependencies or the game.
 
-## Use
+Close KSP and back up the existing mod folder. For a first install, copy **GameData/RailgunLogistics** from the standard release ZIP into the game's GameData folder. Preserve your existing Settings.xml. The ZIP whose name includes **Update** is the updater's internal payload.
 
-Fly the ship needing supplies in orbit, above the atmosphere. It needs a free **standard Clamp-O-Tron (size1)** docking port with a clear approach. Junior, Sr., gendered and rotation-snap ports are not supported in this version. Right-click a command pod/probe core and choose **Request railgun supplies**, or click the blue twin-rail toolbar icon. Select the port, enter fuel quantities (or use **Fill**), then **Dispatch from Kerbin**. Units are KSP resource units, not litres or tonnes.
-
-Default timing is **30 seconds charging + 120 seconds transit at Kerbin**, or **30 seconds + 600 seconds at other bodies**, followed by the physical approach (about another minute in the orbital test). The countdown uses real elapsed seconds, independent of timewarp. The delivery board shows the shared queue. The receiving ship must be loaded and under the requesting player's control to receive cargo. If you switch ships or disconnect, the cargo waits. Return to the ship to finish delivery. It can follow the receiving command part through docking.
-
-After the countdown, a **real persistent cargo vessel** arrives 60 m outside the selected port, with its own stock docking port, collider, mass and locked resource tanks. At **1x time**, assisted guidance brings it down the docking corridor; stock docking magnets perform capture and join the two vessels. **Cargo only transfers after that connection exists**, and is subtracted from the pod's tanks. The empty pod stays attached. Use the normal docking-port **Undock** action when you are finished with it.
-
-Keep engines/RCS off, SAS on and the port clear during approach. An obstructed/occupied port or a full/locked receiver tank makes the delivery wait. Wait for the board to say **Docked and unloaded** before undocking. The insertion and approach are assisted; this does not simulate a launch from the surface or a fuel-limited interplanetary trajectory. The optional **KRL-6 Kerbin Railgun Logistics Terminal** still opens the same menu.
-
-The current version is an emergency service with no fuel-stock or funds debit. The charging stage is a timer; it does not consume a physical launcher's electricity. Those are explicit gameplay choices for this first assisted version, not simulated launch physics.
-
-Supported by default: LiquidFuel, Oxidizer, MonoPropellant, XenonGas, LqdHydrogen, LqdMethane, ArgonGas, Lithium and ElectricCharge. Only resources already present in the ship's unlocked tanks appear. Locked tanks remain locked. Full tanks never overfill; if the requested cargo no longer fits, the entire delivery waits until sufficient unlocked space is available. There is one pending dispatch per receiver. Cancel before transfer begins if necessary.
-
-## Installation
-
-Download the playable mod ZIP from Releases. Close KSP. Copy its **GameData/RailgunLogistics** into the KSP folder, merging GameData. Do this on **every player's PC**. No installer is required. It is a small custom-mod package, not the third-party mod pack. The GitHub source ZIP does not contain the compiled mod.
-
-For the host, close the Luna server cleanly first, then copy **Server/Plugins/RailgunLogistics.Server.dll** into its Plugins folder. Run the included installer to also allow the new part and require matching client DLLs in mod control:
+The host also installs **Server/Plugins/RailgunLogistics.Server.dll** while the server is stopped and updates its required-client hash with the included installer:
 
 ```powershell
 .\Install.ps1 -KspPath 'D:\Games\Kerbal Space Program' -ServerPath 'D:\Servers\LunaMultiplayer'
 ```
 
-Players only copy the mod folder; the script above is for initial server administration. Keep the existing KSP/Luna client. The updater backs up its own replaced files and preserves settings, saves, and unrelated mods. It does not download the game, install Luna, or change the server password, name, or mode. Back up saves/Universe separately before first use.
+Existing supported clients check the published channel at startup. When an update is downloaded, quit KSP normally, wait for the helper, and reopen before joining the updated host. Updates preserve saves, local settings and unrelated mods. The host must be updated separately. See [update details](README-Updates.md).
 
-Single-player settings: `GameData/RailgunLogistics/Settings.xml`. Single-player order ledger: `saves/<save>/RailgunLogistics.xml`. Luna settings/ledger: `Universe/RailgunLogistics/Settings.xml` and `Orders.xml`, created on first server start. Change server settings while stopped. Ledger files have an atomic `.previous` revision; **do not delete/reset orders to fix an error**, as that discards delivery history. Keep these files with the corresponding save/universe backup.
+## Scope and verification
 
-## Persistence and multiplayer behavior
+This is an experimental **Kerbin-orbit** release. Minmus and interplanetary delivery are not implemented. Keep the controlling players connected while a pod is flying. Available pods, fuel, native docking and a successful physical return are required; a lost or fuel-starved fleet is not repaired by installing an update.
 
-The server authorizes each dispatch and grant against the current control lock. Each order has a deterministic cargo-vessel ID and a persistent module on its physical pod. The pod snapshot must be durable before completion can be confirmed. Reconnecting finds that pod again; an acknowledged pod missing from the client waits for synchronization instead of creating replacement fuel. A receipt, emptied pod tanks, dock connection and receiver resources are saved together after unloading. Repeated grants inspect the receipt and do not unload twice. Storage errors stop ledger mutations instead of resetting state. Protocol v2 requires the updated client and server together; it does not fall back to the old instant-transfer mechanism.
+The 0.3.7 ordinary-configuration check completed one full native two-client launch, delivery, return and persisted refit, including coordinated coast warp. Touchdown was 2.93 m from the pad with all 29 original parts. The older-pod shell construction and menu controls also passed their native checks. See [validation and limits](docs/Release-0.3.7-Validation.md). One controlled route does not establish repeated reliability for every receiver.
 
-Standard Luna vessel saving is still part of the persistence boundary. As with the existing game, deliberate save rollback or a restored mismatched universe/ledger is outside the duplicate-delivery guarantee. Two simultaneous real clients and crash recovery must be tested before treating the first release as established on the shared server.
+## Building and licence
 
-## Verification status
+Use the .NET 8 SDK and your own installed game/Luna assemblies. Set `KspRoot` and `LunaRoot` when building. `Build.ps1` stages the custom client/server package. Game assemblies, third-party mod binaries, private saves and local evidence are not distributed.
 
-- Client and server compile against the locally installed game/Luna assemblies, with zero build warnings/errors.
-- 34 automated checks cover countdowns, cancellation, ownership, persistent pod identity/acknowledgement, duplicate packets, restart history, invalid quantities/resources, capacity limits, atomic saves and persistence failure.
-- Isolated Luna server successfully loaded and registered the plugin on loopback UDP8817; no public listing.
-- The previous0.1.0 instant-transfer implementation passed native one-client Luna delivery and restart tests. Those tests do not establish physical docking behavior in0.2.0.
-- Native0.2.0 physical docking passed in an isolated orbital sandbox and on a Luna loopback server with one real client: separate71-part station and1-part pod became one72-part vessel through the stock docking event. The pod lost1,000mono, the station gained exactly1,000, its LiquidFuel stayed unchanged, both ports saved reciprocal Docked states, and the server committed one receipt asDelivered. The empty pod remained attached in orbit.
-- A diagnostic reader briefly blocked an atomic ledger replacement during the single-player run. The depot stopped rather than granting more cargo; reloading the saved docked pod recovered the delivery once, without another pod or duplicate fuel. The uninterrupted Luna run passed normally. A forced process-crash test and two simultaneous real clients remain untested.
-- The earlier0.1.0 clean lab-server restart retained its120-unit delivery. This is historical validation, separate from the0.2.0 docking test.
-- Receiver patch/menu and shared server queue were exercised in KSP. Launcher rendering passed after adding the ReStock whitelist; see MODLOG.md for evidence. The terminal is a functional placeholder model, not finished artwork.
-- `Railgun-Physical-Docking-Demo.mp4` shows the native Luna approach, stock docking and cargo handoff. Waiting time is explicitly shortened in the edit. The older videos demonstrate the superseded instant-transfer version.
+Original mod and updater code developed for Kgeg4 with OpenAI Codex; MIT licence. The mod uses the player's installed KSP/Unity, Luna, ModuleManager, MechJeb and Harmony.
 
-## Build / source
-
-Run `Build.ps1` with the .NET8 SDK. The client targets net472 and the server net6.0. `Directory.Build.props` contains the local assembly paths; override KspRoot/LunaRoot when building elsewhere. It compiles, runs the checks and stages `release/`. Do not distribute `references/`, `lab/`, game assemblies, personal saves or backups.
-
-Disable/update only with KSP/server stopped. Moving a mod folder out does not revert fuel changes already received. Do not restore an old whole universe merely to remove this mod, because that would discard later progress. Keep the part definitions while any vessel still uses a launcher terminal or physical cargo pod.
+Earlier versions and validation reports remain in the [changelog](CHANGELOG.md) and Git history. Use the release notes and published update channel to identify the current build.

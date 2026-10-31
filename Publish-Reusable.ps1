@@ -21,13 +21,18 @@ if(!$entry -or $entry.Sha.Replace('-','') -ne $clientHash) { throw 'The host mus
 foreach($part in @('krlReusableProbe','krlReusableFuelCargo','krlReusableMonoCargo')) {
     if(!$control.SelectSingleNode("//AllowedParts/string[text()='$part']")) { throw "Host is missing reusable part $part." }
 }
+$shellConfig=Join-Path $build 'package\GameData\RailgunLogistics\Parts\ReusableParts.cfg'
+if ((Test-Path -LiteralPath $shellConfig) -and (Get-Content -LiteralPath $shellConfig -Raw) -match '(?m)^\s*@?name\s*=\s*krlLaunchShell\s*$' -and !$control.SelectSingleNode("//AllowedParts/string[text()='krlLaunchShell']")) {
+    throw 'Host is missing the physical launch shell part krlLaunchShell.'
+}
 $serverRoot=(Resolve-Path -LiteralPath $ServerPath).Path
-$running=Get-CimInstance Win32_Process -Filter "Name='Server.exe'" | Where-Object ExecutablePath -eq (Join-Path $serverRoot 'Server.exe')
+$running=@(Get-Process -Name Server -ErrorAction SilentlyContinue | Where-Object Path -eq (Join-Path $serverRoot 'Server.exe'))
 if(!$running) { throw 'Start and verify the matching host before promotion.' }
+if($running.Count -ne 1) { throw 'Expected exactly one matching shared host.' }
 $plugin=Join-Path $serverRoot 'Plugins\RailgunLogistics.Server.dll'
 if([Reflection.AssemblyName]::GetAssemblyName($plugin).Version.ToString(3) -ne $BundleVersion) { throw 'Expected the matching shared-fleet server plugin.' }
 $changed=@(Get-Item -LiteralPath $plugin,(Join-Path $serverRoot 'Config\LMPModControl.xml')) | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-if($running.CreationDate -lt $changed.LastWriteTime) { throw 'The host must restart after its plugin and mod-control update.' }
+if($running[0].StartTime -lt $changed.LastWriteTime) { throw 'The host must restart after its plugin and mod-control update.' }
 foreach($folder in @($build,$bootstrap)) {
     [xml]$descriptor=Get-Content -LiteralPath (Join-Path $folder 'friends.xml') -Raw
     $zip=Join-Path $folder "RailgunLogistics-Update-$($descriptor.Release.Version).zip"

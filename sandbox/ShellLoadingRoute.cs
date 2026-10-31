@@ -17,6 +17,10 @@ namespace RailgunSandbox
         public double Grip { get; private set; }
         public bool AlignToRail => Stage >= ShellTransferStage.Tilting;
         public bool Seated => Stage == ShellTransferStage.Docked;
+        // Observer artwork only. Never pass this value to the measured pilot controller.
+        public static ShellLoadingRoute Presentation(int stage, double grip) => stage < 0 || stage > 5 ||
+            !FlightRules.Finite(grip) || grip < 0 || grip > 1 ? null :
+            new ShellLoadingRoute { Stage = (ShellTransferStage)stage, Grip = grip };
         public string Description => Stage == ShellTransferStage.Gripping ? "Transport carrier gripping shell bands" :
             Stage == ShellTransferStage.Lifting ? "Hoisting shell above the launch cradle" :
             Stage == ShellTransferStage.Traversing ? "Bridge trolley moving shell over the rail" :

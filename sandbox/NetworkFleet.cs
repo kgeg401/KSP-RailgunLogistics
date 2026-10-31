@@ -77,6 +77,12 @@ namespace RailgunSandbox
         FleetSlot Slot(int number) => authority?.Slots.SingleOrDefault(s => s.Pod.Number == number);
         public string Pilot(int number) => Slot(number)?.Pilot ?? "";
         public string Dispatcher(int number) => Slot(number)?.Dispatcher ?? "";
+        public bool DeliveryConfirmed(PodRecord pod)
+        {
+            var committed=Slot(pod.Number)?.Pod;
+            return HasSnapshot&&committed!=null&&committed.CargoTransferred&&committed.OrderId!=""&&
+                committed.OrderId==pod.OrderId&&committed.VesselId==pod.VesselId;
+        }
         public bool HasActivePilot(int number)
         {
             var slot = Slot(number);
@@ -89,6 +95,9 @@ namespace RailgunSandbox
             if (vessel == null || !vessel.loaded || !NativeOwner(pod, false)) return false;
             var own = vessel.parts.FirstOrDefault(p => p.flightID == pod.OwnPort)?.FindModuleImplementing<ModuleDockingNode>();
             return own?.otherNode?.part.flightID == pod.TargetPort && own.otherNode.vessel == vessel &&
+                own.fsm?.CurrentState?.name?.StartsWith("Docked", StringComparison.Ordinal)==true &&
+                own.otherNode.fsm?.CurrentState?.name?.StartsWith("Docked", StringComparison.Ordinal)==true &&
+                own.otherNode.otherNode==own && StockPods.OriginalPartsIntact(pod,vessel) &&
                 vessel.parts.Any(p => p.flightID == pod.TargetAnchor);
         }
         public string Diagnostics(PodRecord pod)
@@ -142,7 +151,7 @@ namespace RailgunSandbox
         }
         public void Pump(ref FleetState local)
         {
-            if(IsMultiplayer&&Connected)LunaDockingCompatibility.Install();
+            if(IsMultiplayer&&Connected){LunaDockingCompatibility.Install();LunaDockingCompatibility.Pump();}
             if (view != null) local = view;
             if (!subscribed && ModApiEvent.onModMessageReceived != null) { ModApiEvent.onModMessageReceived.Add(Receive); subscribed = true; }
             if (!Connected) { authority = null; view = local = null; SetupRequested = FollowFlight = false; pending.Clear(); requestedControl.Clear(); loadingViews.Clear(); Error = "Waiting for the Luna connection."; return; }
@@ -220,7 +229,16 @@ namespace RailgunSandbox
             }
             foreach (var pod in local.Pods) {
                 var slot = Slot(pod.Number);
-                if (slot.Pilot != Player && !pending.ContainsKey(pod.Number) && OwnsDockedReceiver(pod)) Queue(slot, "Acquire", null);
+                bool departing=pod.Phase==FlightPhase.Returning&&NativeOwner(pod,false)&&StockPods.OriginalPartsIntact(pod,StockPods.Vessel(pod));
+                if (slot.Pilot != Player && !pending.ContainsKey(pod.Number) && (OwnsDockedReceiver(pod)||departing)) {
+                    // The stock coupling callback snapshots before its port FSMs
+                    // finish. Publish the real completed native state before the
+                    // server evaluates this receiving-owner handoff. No lease is
+                    // claimed and no cargo changes until the server verifies it.
+                    VesselProtoSystem.Singleton.MessageSender.SendVesselMessage(StockPods.Vessel(pod),false,
+                        "Assigned receiver completed native dock / "+pod.OrderId);
+                    Queue(slot, "Acquire", null);
+                }
             }
             foreach (int number in requestedControl.ToArray()) {
                 if (LeaseValid(number)) requestedControl.Remove(number);
@@ -232,7 +250,7 @@ namespace RailgunSandbox
                     if (!pending.ContainsKey(pod.Number)) Queue(Slot(pod.Number), "ObserveMissing", null);
                 } else if (pending.TryGetValue(pod.Number, out var probe) && probe.Message.Kind == "ObserveMissing") pending.Remove(pod.Number);
             }
-            foreach (var slot in authority.Slots) if (LeaseValid(slot.Pod.Number) && !pending.ContainsKey(slot.Pod.Number) && slot.LeaseUntil - Now < 12)
+            foreach (var slot in authority.Slots) if (LeaseValid(slot.Pod.Number) && NativeOwner(slot.Pod,false) && !pending.ContainsKey(slot.Pod.Number) && slot.LeaseUntil - Now < 12)
                 Queue(slot, "Heartbeat", null);
         }
         void Queue(FleetSlot slot, string kind, PodRecord proposed)
@@ -242,13 +260,20 @@ namespace RailgunSandbox
                 Lease = slot.Lease, Request = Guid.NewGuid().ToString("N"), Pod = proposed == null ? null : FleetWire.Copy(proposed) };
             pending[slot.Pod.Number] = new Pending { Message = request, Sent = Time.realtimeSinceStartup }; Send(request);
         }
-        public void PublishLoadingView(PodRecord pod,LoadingPose pose,double now)
+        public void PublishLoadingView(PodRecord pod,LoadingPose pose,double now,ShellLoadingRoute shell=null)
         {
             if(!Ready||!LeaseValid(pod.Number)||Time.realtimeSinceStartup<nextLoadingView)return;
             nextLoadingView=Time.realtimeSinceStartup+.25f;
             var slot=Slot(pod.Number);
             Send(new FleetMessage {Kind="LoadingView",Epoch=authority.Epoch,Number=pod.Number,Lease=slot.Lease,
-                LoadingOrder=pod.OrderId,LoadingSeconds=pose.Stage==LoadingStage.Aligning?-1:pose.Elapsed,LoadingSampleUt=now});
+                LoadingOrder=pod.OrderId,LoadingSeconds=pose.Stage==LoadingStage.Aligning?-1:pose.Elapsed,LoadingSampleUt=now,
+                LoadingShellStage=shell==null?-1:(int)shell.Stage,LoadingShellGrip=shell?.Grip??0});
+        }
+        public ShellLoadingRoute ObservedShell(PodRecord pod)
+        {
+            if(!loadingViews.TryGetValue(pod.Number,out var sample)||sample.LoadingOrder!=pod.OrderId||
+                Math.Abs(Planetarium.GetUniversalTime()-sample.LoadingSampleUt)>2) return null;
+            return ShellLoadingRoute.Presentation(sample.LoadingShellStage,sample.LoadingShellGrip);
         }
         public LoadingPose ObservedLoading(PodRecord pod,double now)
         {
@@ -257,6 +282,10 @@ namespace RailgunSandbox
         }
         public void Acquire(PodRecord pod)
         {
+            if (Ready && LmpClient.VesselUtilities.VesselCommon.IsSpectating) {
+                Error = "Take native control of a vessel before preparing or piloting a pod; this client is spectating another player's ship.";
+                return;
+            }
             if (!Ready || !VesselProtoSystem.Singleton.ProtoSystemReady) { Error = "Wait for the native Luna world to synchronize."; return; }
             var slot = Slot(pod.Number); if (slot == null || pending.ContainsKey(pod.Number) || LeaseValid(pod.Number)) return;
             if (slot.LeaseUntil > Now && slot.Pilot != Player) { Error = "Pod " + pod.Number + " is controlled by " + slot.Pilot + "."; return; }

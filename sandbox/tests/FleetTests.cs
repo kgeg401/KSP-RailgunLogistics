@@ -99,7 +99,8 @@ Check(!FlightRules.Busy(recovery) && recovery.FlightsCompleted == 0 && !recovery
 Reject(() => FlightRules.Advance(recovery, FlightPhase.Ready, 3000), "Completed test cannot silently re-enter normal service");
 Reject(() => Book(recoveryFleet), "Completed test cannot be reserved for cargo");
 Reject(() => FlightRules.BeginRecoveryTest(New().Pods[0], true, 1), "A ground pod is not an orbital recovery fixture");
-Check(ReentryEnvelope.SpeedCeiling(23000) < 1850, "Entry remains below the observed 2100 m/s failure corridor while using the measured retracted-leg thermal margin");
+Check(ReentryEnvelope.SpeedCeiling(40000) <= 1850 && ReentryEnvelope.SpeedCeiling(30000) <= 1550 && ReentryEnvelope.SpeedCeiling(20000) <= 1200,
+    "Brake before the full-profile attempt07 retracted-leg overheat corridor; native thermal and touchdown validation still required");
 Check(!FlightRules.HasMainPropellant(.013622751574748848, .016310945308701419), "Native flameout residue is not usable landing propellant");
 Check(ReentryEnvelope.Limit(200, 40000) == 200, "Entry cap never relaxes stricter native braking");
 Check(ReentryEnvelope.SpeedCeiling(100000) == double.MaxValue, "Orbital planning retains the native speed limit");
@@ -147,6 +148,24 @@ Check(RailLaunch.DriveAcceleration(RailLaunch.MuzzleSpeed - 1, .02, 3) <= 50, "L
 Reject(() => RailLaunch.DriveAcceleration(0, 0, 3), "Zero physics timestep rejected");
 Reject(() => RailLaunch.DriveAcceleration(0, double.NaN, 3), "Invalid physics timestep rejected");
 Check(!RailLaunch.BurnWindow(60000, 70000, 5, 4), "Circularization cannot ignite inside atmosphere");
+Check(Math.Abs(RailLaunch.EstimateHalfBurn(400,60,1500)-8)<1e-9,"Native tonnes and kilonewtons place the equivalent impulse eight seconds ahead for a sixteen second burn");
+Check(RailLaunch.EstimateHalfBurn(0,60,1500)==0,"No remaining delta-v requires no centering lead");
+Reject(()=>RailLaunch.EstimateHalfBurn(400,60,0),"Missing native thrust cannot schedule a resumed burn");
+Reject(()=>RailLaunch.EstimateHalfBurn(double.NaN,60,1500),"Invalid remaining delta-v cannot schedule a resumed burn");
+Reject(()=>RailLaunch.EstimateHalfBurn(800,1000,1),"Invalidly long resumed burn is rejected instead of waiting unbounded");
+Check(!FlightRules.CircularizationComplete(false, 1, 75209, .1862, 70000), "Measured mid-burn reload must finish its pending correction even in an atmosphere-safe orbit");
+Check(!FlightRules.CircularizationComplete(true, 0, 383795, .00036, 70000), "Active native executor cannot be declared finished");
+Check(FlightRules.CircularizationComplete(false, 0, 383795, .00036, 70000), "Completed native burn with no remaining node can continue the route");
+Check(!FlightRules.CircularizationComplete(false, 0, 60000, .2, 70000), "Missing maneuver cannot hide an unsafe periapsis");
+var privateGuidanceArgs=new[]{"-railgun-mp-test","-railgun-guidance-lab"};
+Check(FlightRules.PrivateGuidanceExperiment(privateGuidanceArgs,true,true,"127.0.0.1",8817),"Explicit loopback leader may select measured landing candidate");
+Check(FlightRules.PrivateGuidanceExperiment(new[]{"-railgun-mp-test-b","-railgun-guidance-lab"},true,true,"::ffff:127.0.0.1",8818),"Private follower permits actual IPv4-mapped loopback endpoint");
+Check(!FlightRules.PrivateGuidanceExperiment(privateGuidanceArgs,true,true,"192.168.1.4",8817),"Shared LAN server cannot enable private landing experiments");
+Check(!FlightRules.PrivateGuidanceExperiment(privateGuidanceArgs,true,true,"127.0.0.1",8800),"Production loopback port cannot enable private landing experiments");
+Check(!FlightRules.PrivateGuidanceExperiment(new[]{"-railgun-mp-test"},true,true,"127.0.0.1",8817),"Ordinary multiplayer test retains defaults without explicit guidance opt-in");
+Check(!FlightRules.PrivateGuidanceExperiment(privateGuidanceArgs,false,true,"127.0.0.1",8817),"Disconnected native peer cannot enable private guidance");
+Check(!FlightRules.PrivateGuidanceExperiment(privateGuidanceArgs,true,false,"127.0.0.1",8817),"Single-player runtime cannot impersonate loopback multiplayer validation");
+Check(!FlightRules.PrivateGuidanceExperiment(new[]{"-railgun-guidance-lab"},true,true,"127.0.0.1",8817),"Guidance flag alone cannot affect ordinary server play");
 Check(!RailLaunch.BurnWindow(110000, 70000, 100, 4), "No powered ascent while coasting toward apoapsis");
 Check(RailLaunch.BurnWindow(110000, 70000, 8, 4), "Native burn may begin near apoapsis in vacuum");
 Check(!RailLaunch.BurnWindow(110000, 70000, -50, 4), "Missed burn window rejected");
@@ -214,6 +233,20 @@ Check(DeliveryEta.State(etaPod, true).Message.Contains("interrupted"), "Failed d
 Check(DeliveryEta.Short(315576000) == "10.0y", "Long real journeys are not capped to a short countdown");
 Check(etaPod.Phase == FlightPhase.Stranded && !etaPod.CargoTransferred && etaPod.FlightsCompleted == 0, "ETA calculation cannot advance a mission or create delivery credit");
 var padCommand = TerminalPadGuidance.Compute(100, 0, 0, 0, 100, -3, 9.81, 30);
+Check(TerminalPadGuidance.Compute(5000,0,80,0,4500,-40,9.81,50,120).AccelerationX>0&&TerminalPadGuidance.Compute(5000,0,80,0,4500,-40,9.81,50).AccelerationX<0,"Isolated faster approach preserves inbound velocity without changing ordinary landing defaults");
+Check(TerminalPadGuidance.Compute(100,0,120,0,1000,-40,9.81,50,120).AccelerationX<0,"Stopping distance still brakes a faster approach near its target");
+Check(!TerminalPadGuidance.Compute(5000,0,80,0,4500,-40,9.81,50,double.NaN).Active&&!TerminalPadGuidance.Compute(5000,0,80,0,4500,-40,9.81,50,151).Active,"Unsupported experiment speed cannot steer a vessel");
+var smoothAbove=TerminalPadGuidance.Compute(100,0,5,0,1201,-40,9.81,50,120,true);
+var smoothBelow=TerminalPadGuidance.Compute(100,0,5,0,1199,-40,9.81,50,120,true);
+Check(Math.Abs(smoothAbove.AccelerationX-smoothBelow.AccelerationX)<.01,"Crossing1200m cannot abruptly reaccelerate a smooth experimental approach");
+Check(!RecoveryRcsPolicy.Enable(true,true,100000,90,15),"Orbital return cannot spend the terminal steering reserve");
+Check(!RecoveryRcsPolicy.Enable(true,true,6000,90,15),"Earlier emergency braking cannot consume terminal-only attitude reserve");
+Check(RecoveryRcsPolicy.Enable(true,false,4000,15,15),"Powered approach can use actual reserved attitude propellant");
+Check(RecoveryRcsPolicy.Enable(true,true,4000,5,15)&&!RecoveryRcsPolicy.Enable(true,false,4000,5,15),"Separate RCS entry and exit errors avoid control chatter");
+Check(!RecoveryRcsPolicy.Enable(true,true,4000,2,15),"Settled attitude stops unnecessary RCS use");
+Check(RecoveryRcsPolicy.Enable(true,false,200,0,15),"Final touchdown retains stock stabilization when real reserve exists");
+Check(!RecoveryRcsPolicy.Enable(false,true,200,25,15)&&!RecoveryRcsPolicy.Enable(true,true,200,25,0),"Unowned landing and exhausted reserve cannot enable recovery thrusters");
+Check(!RecoveryRcsPolicy.Enable(true,true,double.NaN,25,15)&&!RecoveryRcsPolicy.Enable(true,true,200,double.PositiveInfinity,15),"Invalid native recovery measurements cannot request thrusters");
 Check(padCommand.Active && padCommand.AccelerationX > 0 && padCommand.AccelerationZ == 0 && padCommand.SlowDescent, "Terminal request points toward the assigned pad and allows time to align");
 var padBraking = TerminalPadGuidance.Compute(0, 0, 5, -5, 100, -3, 9.81, 30);
 Check(padBraking.AccelerationX < 0 && padBraking.AccelerationZ > 0, "Terminal correction opposes lateral drift instead of merely aiming at the pad");
@@ -406,4 +439,60 @@ Check(Math.Abs(334*approachDuration+approachStart.X*approachDuration*approachDur
 Check(Math.Abs(5100-314*approachDuration+(approachStart.Y-9.65)*approachDuration*approachDuration/2+(ayEnd-approachStart.Y)*approachDuration*approachDuration/6)<1e-6,"Unclipped intercept integrates to ground height");
 Check(Math.Abs(-314+(approachStart.Y-9.65)*approachDuration+(ayEnd-approachStart.Y)*approachDuration/2+.5)<1e-6,"Intercept terminal descent speed is half a metre per second");
 Check(!FlightRules.Finite(PoweredApproach.Plan(6800,5100,0,334,-314,0,9.65,9)),"Insufficient thrust cannot produce an accepted powered intercept");
+// Captured native safe transfers and the failed3042.8m/s close intercept.
+double measuredBudget=RendezvousPolicy.AvailableDeltaV(63.332,4201.8676125693282,5135.615879191816,.9,1.1,.005,.005,310,9.80665);
+string recoveryVessel="7048059c4ec94cce8e3adc8d2a16276d",recoveryOrder="d7ce0e6551f04210b9a486bc0ea16a9b",nextRecoveryOrder="04e7f6b62f8a458b8058da7b306f8316";
+var usedRecoveryKeys=new System.Collections.Generic.HashSet<string>();
+Check(usedRecoveryKeys.Add(RendezvousPolicy.RecoveryAttemptKey(recoveryVessel,recoveryOrder)),"One authenticated delivery can receive one guarded recovery");
+Check(!usedRecoveryKeys.Add(RendezvousPolicy.RecoveryAttemptKey(recoveryVessel,recoveryOrder)),"Retrying the same order cannot replenish the recovery attempt");
+Check(!usedRecoveryKeys.Add(RendezvousPolicy.RecoveryAttemptKey(recoveryVessel.ToUpperInvariant(),recoveryOrder.ToUpperInvariant())),"Changing GUID casing cannot replenish the same recovery attempt");
+Check(usedRecoveryKeys.Add(RendezvousPolicy.RecoveryAttemptKey(recoveryVessel,nextRecoveryOrder)),"Reusing the returned original pod on a new order has a separate attempt budget");
+Check(RendezvousPolicy.RecoveryAttemptKey(recoveryVessel,"")==null&&RendezvousPolicy.RecoveryAttemptKey("replacement",recoveryOrder)==null,"Missing or invalid original identities cannot acquire a recovery budget");
+Check(measuredBudget>3500&&measuredBudget<4500,"Captured native orbital pod retains a finite physically computed return budget");
+foreach(double correction in new[]{82.6964,158.2887,171.4020,118.0477,138.3775,66.6641})
+    Check(RendezvousPolicy.Reject(correction,correction,measuredBudget,112191.79,.159,70000)==null,"Observed ordinary native maneuver remains inside the safety envelope: "+correction);
+Check(RendezvousPolicy.Reject(3042.8068,1815.4581,measuredBudget,112191.79,.159,70000)!=null,"Captured catastrophic close-intercept node is refused before execution");
+Check(RendezvousPolicy.Reject(66,501,measuredBudget,112191.79,.159,70000)!=null,"An unexpectedly growing residual cannot hide behind a small original node");
+Check(RendezvousPolicy.Reject(100,100,1550,112191.79,.159,70000)!=null,"A modest maneuver cannot consume the home-return reserve");
+Check(RendezvousPolicy.Reject(100,100,1600,112191.79,.159,70000)!=null,"The old1500m/s reserve cannot admit a route after native returns proved it insufficient");
+Check(RendezvousPolicy.Reject(100,100,3100,112191.79,.159,70000)==null,"Exactly preserving the revised3000m/s operating floor is admissible; landing still requires native validation");
+foreach(double bad in new[]{double.NaN,double.PositiveInfinity,-1}) {
+    Check(RendezvousPolicy.Reject(bad,100,measuredBudget,112191.79,.159,70000)!=null,"Invalid planned native correction cannot execute");
+    Check(RendezvousPolicy.Reject(100,bad,measuredBudget,112191.79,.159,70000)!=null,"Invalid remaining native correction cannot execute");
+}
+Check(RendezvousPolicy.Reject(100,100,measuredBudget,72000,.159,70000)!=null,"Rendezvous cannot plan an atmospheric orbit as a delivery route");
+Check(RendezvousPolicy.Reject(14.700645341213773,14.700673031236311,3538.8,70332,.159,70000)!=null,"First fresh multiplayer route's short unsafe intercept stays blocked despite sufficient fuel");
+Check(RendezvousPolicy.Reject(14.700645341213773,14.700673031236311,3538.8,73000,.159,70000)!=null,"Touching the recovery boundary is not a safe orbit");
+Check(RendezvousPolicy.Reject(100,100,measuredBudget,112191.79,1,70000)!=null,"An escaping route is not a supported rendezvous correction");
+Check(double.IsNaN(RendezvousPolicy.AvailableDeltaV(10,5000,5000,.9,1.1,.005,.005,310,9.80665)),"Impossible native resource mass cannot manufacture a delta-v budget");
+Check(double.IsNaN(RendezvousPolicy.AvailableDeltaV(63,0,5000,.9,1.1,.005,.005,310,9.80665)),"An exhausted mixture component cannot provide engine delta-v");
+double unbalanced=RendezvousPolicy.AvailableDeltaV(63,100,5000,.9,1.1,.005,.005,310,9.80665);
+Check(unbalanced>0&&unbalanced<100,"Mixture limiting prevents surplus oxidizer being counted as usable fuel");
+Check(LunaDockingPolicy.CaptureEnvelope(.05,12.830,1,.076),"Captured stock receiver network confirmation is admissible");
+Check(LunaDockingPolicy.CaptureEnvelope(.05,30.753,1,.1),"Original71part receiver divergence fits a bounded network replication envelope");
+foreach(double invalid in new[]{double.NaN,double.PositiveInfinity,-1}) {
+    Check(!LunaDockingPolicy.CaptureEnvelope(invalid,30,1,.1),"Invalid/stale event time cannot replicate native capture");
+    Check(!LunaDockingPolicy.CaptureEnvelope(.1,invalid,1,.1),"Invalid physical separation cannot replicate native capture");
+    Check(!LunaDockingPolicy.CaptureEnvelope(.1,30,invalid,.1),"Invalid facing cannot replicate native capture");
+    Check(!LunaDockingPolicy.CaptureEnvelope(.1,30,1,invalid),"Invalid relative speed cannot replicate native capture");
+}
+Check(!LunaDockingPolicy.CaptureEnvelope(5.01,30,1,.1),"Old native event cannot pull the receiving ship into a stale dock");
+Check(!LunaDockingPolicy.CaptureEnvelope(-.101,30,1,.1),"Future event must wait for the native Luna coupling queue");
+Check(!LunaDockingPolicy.CaptureEnvelope(.1,100.01,1,.1),"Remote confirmation cannot teleport a distant pod");
+Check(!LunaDockingPolicy.CaptureEnvelope(.1,30,.949,.1),"Wrong-facing native ports cannot be replicated as joined");
+Check(!LunaDockingPolicy.CaptureEnvelope(.1,30,1,3.01),"Excessive relative speed requires original network handling");
+Check(LunaDockingPolicy.EmptyCargoSnapshot(true,true,0,false,100,false,100),"Captured stale spectator cargo can mirror the server-confirmed actual empty native tank");
+Check(LunaDockingPolicy.EmptyCargoSnapshot(true,true,0,false,0,false,100),"Already empty cargo replication is idempotent");
+Check(!LunaDockingPolicy.EmptyCargoSnapshot(false,true,0,false,100,false,100),"A local proposed receipt cannot drain cargo without a server confirmation");
+Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,false,0,false,100,false,100),"An old or mismatched native order cannot drain current cargo");
+Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,true,100,false,100,false,100),"Incoming undelivered cargo cannot masquerade as a drained native tank");
+Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,true,0,true,100,false,100),"An unlocked source tank is outside isolated cargo replication");
+Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,true,0,false,100,true,100),"An unlocked local tank cannot be silently drained");
+Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,true,0,false,101,false,100),"Unexpected extra native contents require explicit repair rather than silent removal");
+foreach(double bad in new[]{double.NaN,double.PositiveInfinity,-1}) {
+    Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,true,bad,false,100,false,100),"Invalid received native cargo cannot replicate");
+    Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,true,0,false,bad,false,100),"Invalid local native cargo cannot replicate");
+    Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,true,0,false,100,false,bad),"Invalid manifest cannot authorize cargo replication");
+}
+Check(!LunaDockingPolicy.EmptyCargoSnapshot(true,true,0,false,0,false,0),"An empty manifest is not a completed physical delivery");
 Console.WriteLine($"PASS {checks} fleet, docking evidence, landing, cargo, launch, loading and persistence checks. Native flight not established by these checks.");

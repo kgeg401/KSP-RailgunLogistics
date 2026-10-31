@@ -3,10 +3,58 @@ from pathlib import Path
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
-from audit_roundtrip import PHASES, audit, clock, mission_history, native_time, sequence
+from audit_roundtrip import PHASES, audit, clock, mission_history, native_time, sequence, require_fresh_depot, initial_assembly, final_assembly, shell_rearmed
 
 
 class RoundTripAuditTests(unittest.TestCase):
+    def test_ready_requires_observed_new_closed_shell(self):
+        first = ET.fromstring('<Pod><OriginalParts>1</OriginalParts><PartIds><unsignedInt>1</unsignedInt></PartIds><LaunchShellRequired>true</LaunchShellRequired><LaunchShellPartId>2</LaunchShellPartId></Pod>')
+        last = ET.fromstring('<Pod><OriginalParts>1</OriginalParts><PartIds><unsignedInt>1</unsignedInt></PartIds><LaunchShellRequired>true</LaunchShellRequired><LaunchShellPartId>3</LaunchShellPartId><LaunchShellPanelsReleased>false</LaunchShellPanelsReleased><LaunchShellBaseReleased>false</LaunchShellBaseReleased><LaunchShellOpenedAt>-1</LaunchShellOpenedAt><LaunchShellClearAt>-1</LaunchShellClearAt></Pod>')
+        text = 'PART\n{\nuid = 1\nname = stockPod\n}\nPART\n{\nuid = 3\nname = krlLaunchShell\nMODULE\n{\nname = ModuleProceduralFairing\nfsm = st_idle\nisCapped = True\n}\nMODULE\n{\nname = ModuleDecouple\nisDecoupled = False\n}\n}\n'
+        sample = dict(pod='1', phase='Ready', shellId='3', shellPresent='True', panels='12', shielded='1', originals='1')
+        self.assertTrue(shell_rearmed(first,last,text,[sample]))
+        for altered in ({'shellPresent':'False'},{'shielded':'0'},{'shellId':'2'},{'phase':'Landing'},{'panels':'0'}):
+            self.assertFalse(shell_rearmed(first,last,text,[dict(sample,**altered)]))
+        self.assertFalse(shell_rearmed(first,last,text,[]))
+        self.assertFalse(shell_rearmed(first,last,text.replace('fsm = st_idle','fsm = st_deployed'),[sample]))
+        last.find('LaunchShellBaseReleased').text = 'true'
+        self.assertFalse(shell_rearmed(first,last,text,[sample]))
+        last.find('LaunchShellBaseReleased').text = 'false';last.find('LaunchShellPartId').text = '2'
+        self.assertFalse(shell_rearmed(first,last,text,[sample]))
+
+    def test_final_spare_retains_shell_and_flown_pod_does_not(self):
+        pod = ET.fromstring('<Pod><OriginalParts>1</OriginalParts><PartIds><unsignedInt>1</unsignedInt></PartIds><LaunchShellRequired>true</LaunchShellRequired><LaunchShellPartId>2</LaunchShellPartId><LaunchShellBaseReleased>false</LaunchShellBaseReleased></Pod>')
+        original = 'PART\n{\nuid = 1\nname = stockPod\n}\n'
+        shell = 'PART\n{\nuid = 2\nname = krlLaunchShell\n}\n'
+        self.assertTrue(final_assembly(pod, original+shell))
+        self.assertFalse(final_assembly(pod, original))
+        pod.find('LaunchShellBaseReleased').text = 'true'
+        self.assertTrue(final_assembly(pod, original))
+        self.assertFalse(final_assembly(pod, original+shell))
+        self.assertFalse(final_assembly(pod, original.replace('uid = 1','uid = 7')))
+
+    def test_fresh_depot_requires_native_ground_contact(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder); (directory / 'Vessels').mkdir()
+            pods = []
+            for i in (1, 2):
+                pods.append(ET.fromstring(f'<Pod><Phase>Ready</Phase><Created>true</Created><VesselId>pod{i}</VesselId><OriginalParts>1</OriginalParts><PartIds><unsignedInt>{i}</unsignedInt></PartIds></Pod>'))
+                (directory / 'Vessels' / f'{i}.txt').write_text(f'sit = LANDED\nlanded = True\nPART\n{{\nuid = {i}\nname = stockPod\nMODULE\n{{\nname = RailgunFlightPod\nfleetId = pod{i}\nplacementSettled = True\n}}\n}}\n')
+            require_fresh_depot(directory, pods)
+            p = directory / 'Vessels/1.txt'; original = p.read_text()
+            for rejected in (original.replace('sit = LANDED', 'sit = FLYING'), original.replace('landed = True', 'landed = False'), original.replace('uid = 1', 'uid = 99'), original.replace('placementSettled = True','placementSettled = False'), original.replace('placementSettled = True','otherField = True')):
+                p.write_text(rejected)
+                with self.assertRaises(ValueError): require_fresh_depot(directory, pods)
+
+    def test_initial_shell_is_exact_declared_disposable_hardware(self):
+        pod = ET.fromstring('<Pod><OriginalParts>1</OriginalParts><PartIds><unsignedInt>1</unsignedInt></PartIds><LaunchShellRequired>true</LaunchShellRequired><LaunchShellPartId>2</LaunchShellPartId></Pod>')
+        text = 'PART\n{\nuid = 1\nname = stockPod\n}\nPART\n{\nuid = 2\nname = krlLaunchShell\n}\n'
+        self.assertTrue(initial_assembly(pod, text))
+        for rejected in (text.replace('uid = 2','uid = 3'), text.replace('krlLaunchShell','otherPart'), text.split('PART',2)[0]+'PART'+text.split('PART',2)[1], text+'PART\n{\nuid = 4\nname = extra\n}\n'):
+            self.assertFalse(initial_assembly(pod, rejected))
+        pod.find('LaunchShellRequired').text = 'false'
+        self.assertFalse(initial_assembly(pod, text))
+
     def test_full_order_with_repeated_samples(self):
         self.assertTrue(sequence([p for p in PHASES for _ in range(3)]))
 

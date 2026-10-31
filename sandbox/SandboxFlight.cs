@@ -50,8 +50,11 @@ namespace RailgunSandbox
     public sealed class SandboxFlight : MonoBehaviour
     {
         public static SandboxFlight Instance { get; private set; }
-        public void OpenMenu() { menuCollapsed = false;if(showcase)ShowcaseShot("ui"); }
+        static bool menuVisible;
+        public void OpenMenu() { menuVisible = true; menuCollapsed = false; RailgunLogistics.Logistics.Instance?.SetMenuIndicator(true); if(showcase)ShowcaseShot("ui"); }
+        public void HideMenu() { menuVisible = false; RailgunLogistics.Logistics.Instance?.SetMenuIndicator(false); InputLockManager.RemoveControlLock(LockName); }
         public static bool ReentryTestSave => !NetworkFleet.IsMultiplayer && Environment.GetCommandLineArgs().Contains("-railgun-reentry");
+        public static bool RendezvousFixtureReady;
         public static bool ShellTestSave => !NetworkFleet.IsMultiplayer && Environment.GetCommandLineArgs().Contains("-railgun-shell");
         public static bool RailLaunchTestSave => !NetworkFleet.IsMultiplayer && (ShellTestSave || Environment.GetCommandLineArgs().Contains("-railgun-railonly"));
         public static bool PortSelectionTestSave => !NetworkFleet.IsMultiplayer && Environment.GetCommandLineArgs().Contains("-railgun-porttest");
@@ -65,6 +68,8 @@ namespace RailgunSandbox
         }
         NetworkFleet network;
         DepotModel model;
+        bool modelHasShells;
+        bool WantsShellDepot => ShellTestSave || state.Pods.Any(p => p.Created && p.LaunchShellRequired) || state.Pods.All(p => !p.Created);
         CelestialBody home;
         string folder, error = "", detail = "Prepare the depot to create its two persistent stock-part pods.";
         string quantity = "100", resource = "MonoPropellant";
@@ -119,7 +124,8 @@ namespace RailgunSandbox
                 home = FlightGlobals.Bodies.First(b => b.bodyName == state.HomeBody);
                 var normal = home.GetRelSurfaceNVector(state.HomeLatitude, state.HomeLongitude);
                 ground = Math.Max(0, home.pqsController.GetSurfaceHeight(normal) - home.pqsController.radius);
-                model = new DepotModel(RailLaunchTestSave, ShellTestSave); SaveLedger();
+                modelHasShells = WantsShellDepot;
+                model = new DepotModel(RailLaunchTestSave || modelHasShells, modelHasShells); SaveLedger();
                 selectedPod = state.Pods.FirstOrDefault(p => p.Created && p.Phase == FlightPhase.Ready)?.Number ?? 1;
                 // Prevent the earlier unlimited countdown service being invoked in this two-pod test save.
                 legacyService = FindObjectsOfType<MonoBehaviour>().FirstOrDefault(c => c.GetType().FullName == "RailgunLogistics.Logistics");
@@ -188,7 +194,7 @@ namespace RailgunSandbox
                         pod.LaunchShellRequired = true; pod.LaunchShellPartId = shell.flightID;
                     }
                     pod.OwnPort = snapshots.Single(part => part.partInfo.name == "dockingPort2").flightID;
-                } else { Pad(pod, out double lat, out double lon); StockPods.Spawn(pod, home, lat, lon, ground, ShellTestSave); }
+                } else { Pad(pod, out double lat, out double lon); StockPods.Spawn(pod, home, lat, lon, ground, ShellTestSave || network != null || !ReentryTestSave); }
                 PersistGame();
             }
             detail = network == null ? "Two real stock-part pods created and saved. Let them settle, then select a receiver." : "Shared pod setup submitted; waiting for native synchronization and depot placement.";
@@ -226,6 +232,7 @@ namespace RailgunSandbox
             state.SelectedReceiverAnchor = part.vessel.rootPart.flightID;
             state.SelectedReceiverPort = selectedPort = part.flightID;
             menuCollapsed = chooseDestination = choosePort = false;
+            OpenMenu();
             showcase = false;
             detail = "Delivery target: " + part.vessel.vesselName + " / " + part.partInfo.title + " #" + part.flightID + " / " + DockingPortPolicy.Name(type) + ". Choose cargo and an available pod.";
             error = ""; SaveLedger();
@@ -272,7 +279,7 @@ namespace RailgunSandbox
             // stale local flag overrule the server's physical readiness check.
             if (network == null && !StockPods.PlacementSettled(p)) throw new InvalidOperationException("Watch the pod once and let its initial construction placement settle before dispatch.");
             string hardware = DockingHardware.Capture(selected);
-            FlightRules.Reserve(state, p, target.rootPart.flightID, selected.part.flightID, target.vesselName, resource, units, StockPods.Capacity(resource), Now, RailLaunchTestSave);
+            FlightRules.Reserve(state, p, target.rootPart.flightID, selected.part.flightID, target.vesselName, resource, units, StockPods.Capacity(resource), Now, RailLaunchTestSave || p.LaunchShellRequired);
             p.DockingType = ConnectorType(selected);
             p.DockingHardwareConfig = hardware;
             double latitude = state.HomeLatitude * Math.PI / 180;
@@ -322,6 +329,13 @@ namespace RailgunSandbox
                 }
             }
             if(state==null)return;
+            if (modelHasShells != WantsShellDepot && !state.Pods.Any(p => p.Phase == FlightPhase.Reserved || p.Phase == FlightPhase.RailLaunch)) {
+                try {
+                    model?.Dispose(); modelHasShells = WantsShellDepot;
+                    model = new DepotModel(RailLaunchTestSave || modelHasShells, modelHasShells);
+                    Debug.Log("[RailgunSandbox] Depot shell-loading hardware refreshed after native fleet upgrade.");
+                } catch (Exception ex) { Fail(ex); return; }
+            }
             if (demoDaylight) {
                 var surfaceUp = (home.GetWorldSurfacePosition(state.HomeLatitude,state.HomeLongitude,ground)-home.position).normalized;
                 double sun = Vector3d.Dot(surfaceUp,(home.orbit.referenceBody.position-home.position).normalized);
@@ -336,7 +350,8 @@ namespace RailgunSandbox
             if (guided != null && guided.CradleHeight > 0) model.ConfigureRail(guided.CradleHeight, guided.RailHeading);
             if (guided != null && guided.CradleHeight > 0) {
                 var pose = guided.Phase == FlightPhase.RailLaunch ? LoadingPose.At(guided.LaunchShellRequired ? LoadingSequence.ShellDuration : LoadingSequence.Duration, guided.LaunchShellRequired) : DisplayLoading(guided);
-                model.Loader.Update(StockPods.Vessel(guided), pose, guided.CradleHeight, guided.Phase == FlightPhase.Reserved, Time.deltaTime, guided.LaunchShellRequired ? ShellRoute(guided) : null);
+                var displayShell = guided.LaunchShellRequired ? network != null && !network.CanAct(guided) ? network.ObservedShell(guided) : ShellRoute(guided) : null;
+                model.Loader.Update(StockPods.Vessel(guided), pose, guided.CradleHeight, guided.Phase == FlightPhase.Reserved, Time.deltaTime, displayShell);
                 model.RailArt.SetPower(pose,guided.Phase==FlightPhase.RailLaunch);
             } else {
                 model?.RailArt.SetPower(null,false);
@@ -344,7 +359,8 @@ namespace RailgunSandbox
                 if(parked!=null) {
                     double idleHeight=Math.Max(RootHeight(parked),parked.altitude-ground+2);
                     model.ConfigureRail(idleHeight,90);
-                    model.Loader.Update(parked,LoadingPose.At(-1,ShellTestSave),idleHeight,false,Time.deltaTime);
+                    var parkedRecord = state.Pods.First(p => StockPods.Vessel(p) == parked);
+                    model.Loader.Update(parked,LoadingPose.At(-1,parkedRecord.LaunchShellRequired),idleHeight,false,Time.deltaTime);
                 } else model?.Loader.SetIdle();
             }
             if (state.Pods.Any(FlightRules.Busy) && TimeWarp.CurrentRate != 1 && !CoastWarpClient.Enabled) TimeWarp.SetRate(0, true);
@@ -386,14 +402,22 @@ namespace RailgunSandbox
                 }
                 // One foreground autopilot at a time. A second reservation stays occupied on its pad.
                 var current = state.Pods.FirstOrDefault(p => FlightRules.Busy(p) && p.Phase != FlightPhase.Reserved) ?? state.Pods.FirstOrDefault(p => p.Phase == FlightPhase.Reserved);
-                if (current != null && network != null && current.Phase == FlightPhase.Returning && network.Dispatcher(current.Number) == network.Player &&
-                    network.CanTakeControl(current.Number) && !network.LeaseValid(current.Number)) {
+                // A restored dispatcher's background update lock can earn the
+                // lease in Pump before this component reaches its first Tick.
+                // Establish foreground physics once before arming the return;
+                // a valid lease alone does not mean the pod is loaded/selected.
+                bool returnNeedsInitialFocus = current != null && network != null && network.LeaseValid(current.Number) && network.NativeOwner(current, false) &&
+                    (!armed.TryGetValue(current.VesselId, out var focusArmed) || focusArmed != nameof(FlightPhase.Landing)) &&
+                    (!follow || StockPods.Vessel(current) != FlightGlobals.ActiveVessel);
+                if (current != null && network != null && current.Phase == FlightPhase.Landing && network.Dispatcher(current.Number) == network.Player &&
+                    network.CanTakeControl(current.Number) && (!network.LeaseValid(current.Number) || returnNeedsInitialFocus)) {
                     if (StockPods.Vessel(current) != FlightGlobals.ActiveVessel) Watch(current); else network.RequestControl(current);
+                    if (returnNeedsInitialFocus) { follow = true; network.FollowFlight = true; }
                     return;
                 }
                 if (current != null && network != null && !network.CanAct(current)) return;
                 if (current != null && network != null) guidedByUs.Add(current.VesselId);
-                if (current != null && (!ReentryTestSave || current.RecoveryTest || current.Phase != FlightPhase.Rendezvous) &&
+                if (current != null && (!ReentryTestSave || current.RecoveryTest || current.Phase != FlightPhase.Rendezvous || RendezvousFixtureReady && Environment.GetCommandLineArgs().Contains("-railgun-rendezvous-fixture")) &&
                     (!RailLaunchTestSave || current.Phase != FlightPhase.Rendezvous)) Tick(current);
             } catch (Exception ex) { Fail(ex); }
         }
@@ -406,6 +430,7 @@ namespace RailgunSandbox
             core.GetComputerModule<MechJebModuleRendezvousAutopilot>().users.Remove(this);
             core.GetComputerModule<MechJebModuleDockingAutopilot>().users.Remove(this);
             core.landing.StopLanding(); core.node.Abort(); core.thrust.ThrustOff();
+            core.rcs.users.Remove(this);
             core.attitude.users.Remove(this);
         }
         void RetractLegs(PodRecord record, Vessel vessel)
@@ -416,18 +441,22 @@ namespace RailgunSandbox
                 if (gear.fsm.CurrentState == gear.st_deployed || gear.fsm.CurrentState == gear.st_deploying) gear.EventToggle();
             }
         }
-        int ApplyLandingEngineCompatibility(PodRecord record, Vessel vessel)
+        int ApplyGuidanceEngineCompatibility(PodRecord record, Vessel vessel)
         {
             int changed = 0;
             foreach (var module in vessel.parts.Where(part => record.PartIds.Contains(part.flightID)).SelectMany(part => part.Modules.Cast<PartModule>())
                 .Where(module => module.moduleName == "PersistentEngine")) {
-                // PersistentThrust 1x gating follows maneuver nodes, while landing guidance steers dynamically.
-                // Keep its native resource/engine simulation, but let this owned pod's guidance aim its burns.
+                // PersistentThrust compares the current orbital velocity with
+                // the planned orbit correction, not the actual engine attitude.
+                // It can therefore block MJ's small finishing corrections once
+                // the orbital residual changes sign, as well as dynamic landing.
+                // Retain native propellant/thrust simulation and MJ's own real
+                // attitude interlock; this changes only the assigned pod's gate.
                 var field = module.GetType().GetField("maneuverToleranceInDegree");
                 if (field == null || field.FieldType != typeof(float)) throw new InvalidOperationException("Unsupported PersistentEngine landing compatibility field.");
-                field.SetValue(module, 180f); changed++;
+                if ((float)field.GetValue(module) != 180f) { field.SetValue(module, 180f); changed++; }
             }
-            Debug.Log("[RailgunSandbox] Landing compatibility configured on " + changed + " owned engine module(s); no resource or force override.");
+            if (changed > 0) Debug.Log("[RailgunSandbox] Guidance compatibility configured on " + changed + " owned engine module(s); no resource or force override.");
             return changed;
         }
         bool Once(PodRecord p) {
@@ -447,7 +476,8 @@ namespace RailgunSandbox
                 }
                 DockingHardware.Refit(p, v); PersistGame(); follow = true;
             }
-            if (follow && v != FlightGlobals.ActiveVessel && p.Phase != FlightPhase.Unloading && p.Phase != FlightPhase.Undocking) { FlightGlobals.SetActiveVessel(v); return; }
+            bool backgroundDeparture=network!=null&&p.Phase==FlightPhase.Returning;
+            if (follow && v != FlightGlobals.ActiveVessel && p.Phase != FlightPhase.Unloading && p.Phase != FlightPhase.Undocking&&!backgroundDeparture) { FlightGlobals.SetActiveVessel(v); return; }
             if (!v.loaded || v.packed || v.rootPart?.rb == null) { p.Detail = "Waiting for native pod physics; travel is not credited as delivery"; return; }
             var marker = StockPods.Marker(p); var core = Core(p);
             if (marker == null || core == null) throw new InvalidOperationException("Pod guidance/MechJeb is not ready.");
@@ -472,7 +502,9 @@ namespace RailgunSandbox
                     Change(p, FlightPhase.Stranded); PersistGame(); return;
                 }
             }
-            if (v != FlightGlobals.ActiveVessel && p.Phase != FlightPhase.Unloading && p.Phase != FlightPhase.Undocking) { p.Detail = "Select Watch pod for native flight control"; return; }
+            if (v != FlightGlobals.ActiveVessel && p.Phase != FlightPhase.Unloading && p.Phase != FlightPhase.Undocking&&!backgroundDeparture) { p.Detail = "Select Watch pod for native flight control"; return; }
+            if (p.Phase == FlightPhase.Rendezvous || p.Phase == FlightPhase.Ascent && p.CircularizationStarted)
+                ApplyGuidanceEngineCompatibility(p, v);
             var target = Receiver(p); var own = OwnPort(p);
             if (target == null && p.Phase <= FlightPhase.Docking && p.Phase >= FlightPhase.Reserved) {
                 core.GetComputerModule<MechJebModuleRendezvousAutopilot>().users.Remove(this);
@@ -505,7 +537,7 @@ namespace RailgunSandbox
                     double loadingAngle = Vector3d.Angle(v.transform.up, loadingAxis);
                     bool seated = !p.LaunchShellRequired || ShellRoute(p).Seated;
                     var loadingPose = LoadingFor(p).Update(p.OrderId, Now, seated && RailLaunch.Captured(loadingAlong, loadingLateral, v.srfSpeed, loadingAngle));
-                    network?.PublishLoadingView(p,loadingPose,Now);
+                    network?.PublishLoadingView(p,loadingPose,Now,p.LaunchShellRequired?ShellRoute(p):null);
                     p.Detail = FormattableString.Invariant($"{loadingPose.Description}: along {loadingAlong:F2} m / lateral {loadingLateral:F2} m / speed {v.srfSpeed:F2} m/s / angle {loadingAngle:F2} deg");
                     if (!seated) p.Detail = ShellRoute(p).Description;
                     if (holdLoadingDemo && loadingPose.LaunchClear) p.Detail = "Isolated demo hold: loading hardware clear; launch not released";
@@ -531,13 +563,23 @@ namespace RailgunSandbox
                     break;
                 case FlightPhase.Rendezvous:
                     if (target.mainBody != v.mainBody) { p.Detail = "Receiver changed body; interplanetary replanning is unsupported"; return; }
+                    if (RendezvousSafety.Held(p.VesselId,out var heldReason)) { StopFlight(core); p.Detail=heldReason; return; }
+                    string guidedIdentity=p.VesselId;
+                    RendezvousSafety.Register(core,this,()=>state.Pods.FirstOrDefault(record=>record.VesselId==guidedIdentity),
+                        ()=>network==null||network.CanAct(state.Pods.First(record=>record.VesselId==guidedIdentity)),
+                        (record,reason)=>{record.Detail=reason;error=reason;SaveLedger();});
+                    // Preserve RCS through long orbital phasing. The installed
+                    // close-intercept planner gives only15s to turn for a node;
+                    // reaction wheels alone chased late residuals in the native
+                    // approach test. Enable real RCS only inside the final10km.
+                    v.ActionGroups.SetGroup(KSPActionGroup.RCS,(v.GetWorldPos3D()-target.GetWorldPos3D()).magnitude<10000);
                     var rendezvous = core.GetComputerModule<MechJebModuleRendezvousAutopilot>();
                     // Rebinding the same physical receiver must not throw away
                     // a partly executed two-burn phasing transfer. Native MJ
                     // uses the refreshed target for its next planning step.
                     BindFlightTarget(p, v, core, target);
                     if (!rendezvous.users.Contains(this) || !rendezvous.enabled) {
-                        rendezvous.desiredDistance.val = 100; rendezvous.maxClosingSpeed.val = 10; rendezvous.users.Add(this);
+                        rendezvous.desiredDistance.val = 100; rendezvous.maxClosingSpeed.val = 100; rendezvous.users.Add(this);
                     }
                     p.Detail = "Actual orbit rendezvous: " + rendezvous.status;
                     if (target.loaded && (v.GetWorldPos3D() - target.GetWorldPos3D()).magnitude < 160 && (v.obt_velocity - target.obt_velocity).magnitude < 1.2) {
@@ -557,6 +599,9 @@ namespace RailgunSandbox
                         docking.users.Remove(this); core.thrust.ThrustOff();
                         Change(p, FlightPhase.Unloading); PersistGame();
                     } else {
+                        if (!ManeuveringFuelAvailable(p,v)) {
+                            StopFlight(core); p.Detail="Docking held: maneuvering propellant exhausted; cargo remains locked"; return;
+                        }
                         bool replaced = BindFlightTarget(p, v, core, port);
                         if (replaced || !docking.users.Contains(this) || !docking.enabled) {
                             docking.users.Remove(this); own.MakeReferenceTransform(); docking.users.Add(this);
@@ -581,13 +626,26 @@ namespace RailgunSandbox
                     break;
                 case FlightPhase.Returning:
                     if (v.mainBody != home) { p.Detail = "Return route from this body is not implemented; pod remains occupied"; return; }
-                    if (target != null && (v.GetWorldPos3D() - target.GetWorldPos3D()).magnitude < 50) {
-                        v.ActionGroups.SetGroup(KSPActionGroup.RCS, true); core.rcs.users.Add(this);
-                        Vector3d away = (v.GetWorldPos3D() - target.GetWorldPos3D()).normalized;
-                        core.rcs.SetTargetWorldVelocity(target.obt_velocity + away * .8);
-                        p.Detail = "RCS departure to clear the receiving ship"; return;
+                    var departurePort=TargetPort(p,target);
+                    if(own?.nodeTransform==null||departurePort?.nodeTransform==null) {
+                        StopFlight(core);p.Detail="Departure held: waiting for the actual receiving-port geometry";return;
                     }
-                    core.rcs.users.Remove(this); Change(p, FlightPhase.Landing);
+                    double portClearance=Vector3.Distance(own.nodeTransform.position,departurePort.nodeTransform.position);
+                    if(own.vessel==departurePort.vessel) { StopFlight(core);p.Detail="Departure held: native docking joint still attached";return; }
+                    if(!FlightRules.Finite(portClearance)) {
+                        StopFlight(core);p.Detail="Departure held: invalid native port clearance";return;
+                    }
+                    if (portClearance < 50) {
+                        if (!ManeuveringFuelAvailable(p,v)) {
+                            StopFlight(core); p.Detail="Departure held: maneuvering propellant exhausted; pod remains occupied"; return;
+                        }
+                        v.ActionGroups.SetGroup(KSPActionGroup.RCS, true); core.rcs.users.Add(this);
+                        Vector3d away = departurePort.nodeTransform.forward.normalized;
+                        core.rcs.SetTargetWorldVelocity(target.obt_velocity + away * .8);
+                        p.Detail = FormattableString.Invariant($"RCS departure along receiving port axis / port clearance {portClearance:F1} of 50 m"); return;
+                    }
+                    marker.departureOrder=p.OrderId;marker.departurePortClearance=portClearance;
+                    core.rcs.users.Remove(this); Change(p, FlightPhase.Landing);PersistGame();
                     break;
                 case FlightPhase.Landing:
                     if (v.altitude > home.atmosphereDepth + 1000 && (!armed.TryGetValue(p.VesselId, out var landingArmed) || landingArmed != nameof(FlightPhase.Landing)) &&
@@ -601,7 +659,7 @@ namespace RailgunSandbox
                     if (Once(p)) {
                         p.StableSince = -1; // A fresh scene/control handoff must establish a new continuous touchdown interval.
                         Pad(p, out double lat, out double lon); v.SetReferenceTransform(marker.part);
-                        ApplyLandingEngineCompatibility(p, v);
+                        ApplyGuidanceEngineCompatibility(p, v);
                         if (v.altitude - ground > 1500) RetractLegs(p, v);
                         RecoveryGuidance.Register(core, home, this, lat, lon, !p.RecoveryTest || ReentryTestSave && Environment.GetCommandLineArgs().Contains("-railgun-pad-guidance"));
                         foreach (var engine in v.parts.Where(part => p.PartIds.Contains(part.flightID)).SelectMany(part => part.FindModulesImplementing<ModuleEngines>())) engine.Activate();
@@ -609,6 +667,9 @@ namespace RailgunSandbox
                         core.landing.deployGears = true; core.landing.limitGearsStage.val = -1; core.landing.touchdownSpeed.val = .4;
                         core.landing.LandAtPositionTarget(this);
                     }
+                    RecoveryGuidance.UpdateRcs(core,Math.Min(core.vesselState.altitudeBottom,core.vesselState.altitudeTrue),
+                        v.parts.Where(part=>p.PartIds.Contains(part.flightID)&&!StockPods.CargoParts(v).Contains(part))
+                            .SelectMany(part=>part.Resources.Cast<PartResource>()).Where(r=>r.resourceName=="MonoPropellant"&&r.flowState).Sum(r=>r.amount));
                     string terminalStatus = RecoveryGuidance.TerminalStatus(core.landing);
                     p.Detail = terminalStatus.StartsWith("centering /", StringComparison.Ordinal) || terminalStatus.StartsWith("intercept /", StringComparison.Ordinal) ? "Home-pad approach: " + terminalStatus : "Powered return to home pad: " + core.landing.status;
                     if (FlightRules.StableLanding(p, FlightRules.LandingEvidence(v.Landed, v.mainBody == home, 0, v.srfSpeed,
@@ -632,18 +693,28 @@ namespace RailgunSandbox
                     }
                     break;
                 case FlightPhase.Refitting:
+                    if (Once(p)) p.StableSince = -1;
                     if (!FlightRules.LandingEvidence(v.Landed, v.mainBody == home, PadDistance(p, v), v.srfSpeed,
                         v.parts.Count(part => p.PartIds.Contains(part.flightID)), p.OriginalParts, UprightAngle(v))) {
+                        p.StableSince = -1;
                         p.Detail = "Refit stopped: craft must remain intact and settled on its home pad"; return;
                     }
                     if (Now - p.PhaseStarted < 10) { p.Detail = "Home depot inspection and refuelling"; return; }
+                    if (!FlightRules.StableLanding(p, true, Now)) { p.Detail = "Verifying stable ground contact before depot construction"; return; }
+                    if (!ShellRefit.Update(p, v, Now, PersistGame)) { p.StableSince = -1; return; }
+                    if (!FlightRules.StableLanding(p, true, Now)) { p.Detail = "Verifying stable ground contact after depot refit"; return; }
                     foreach (var part in v.parts.Where(part => p.PartIds.Contains(part.flightID) && !StockPods.CargoParts(v).Contains(part)))
                         foreach (PartResource tank in part.Resources) if (tank.resourceName == "LiquidFuel" || tank.resourceName == "Oxidizer" || tank.resourceName == "MonoPropellant" || tank.resourceName == "ElectricCharge") tank.amount = tank.maxAmount;
                     foreach (var cargo in StockPods.CargoParts(v).SelectMany(part => part.Resources.Cast<PartResource>())) { cargo.amount = 0; cargo.flowState = false; }
+                    error = "";
                     Change(p, FlightPhase.Ready); PersistGame();
                     break;
             }
         }
+        static bool ManeuveringFuelAvailable(PodRecord pod,Vessel vessel)=>vessel.parts
+            .Where(part=>pod.PartIds.Contains(part.flightID)&&part.partInfo.name!=StockPods.MonoCargo&&part.partInfo.name!=StockPods.FuelCargo)
+            .SelectMany(part=>part.Resources.Cast<PartResource>()).Where(resource=>resource.resourceName=="MonoPropellant"&&resource.flowState)
+            .Sum(resource=>resource.amount)>.01;
         static double RootHeight(Vessel v) => -v.parts.Min(part => v.transform.InverseTransformPoint(part.transform.position).y) + 2;
         LoadingSequence LoadingFor(PodRecord p) {
             if (!loadingSequences.TryGetValue(p.Number, out var sequence)) loadingSequences[p.Number] = sequence = new LoadingSequence(p.LaunchShellRequired);
@@ -762,10 +833,10 @@ namespace RailgunSandbox
                 }
             }
             bool entering = Once(p);
-            if (!core.node.enabled && FlightRules.SafeOrbit(v.orbit.PeA, v.orbit.eccentricity, home.atmosphereDepth)) {
+            if (v.patchedConicSolver == null) { p.Detail = "Waiting for the native orbital plan"; return; }
+            if (FlightRules.CircularizationComplete(core.node.enabled, v.patchedConicSolver.maneuverNodes.Count, v.orbit.PeA, v.orbit.eccentricity, home.atmosphereDepth)) {
                 core.thrust.ThrustOff(); Change(p, FlightPhase.Rendezvous); PersistGame(); return;
             }
-            if (v.patchedConicSolver == null) { p.Detail = "Waiting for the native orbital plan"; return; }
             if (p.CircularizationPlanned && !p.CircularizationStarted && v.patchedConicSolver.maneuverNodes.Count == 0) {
                 // A scene reload can retain the ledger but lose an unexecuted node.
                 // Re-plan from the real current orbit; never insert a velocity.
@@ -776,12 +847,40 @@ namespace RailgunSandbox
             }
             if (entering && p.CircularizationStarted && !core.node.enabled &&
                 v.patchedConicSolver.maneuverNodes.Count == 1 && v.altitude > home.atmosphereDepth + 1000) {
+                // KSP serializes the original maneuver vector, not the executor's
+                // consumed delta-v. Replaying it after a mid-burn reload would
+                // burn the original budget again. Plan the remaining correction
+                // from the actual current orbit instead of accepting a merely
+                // atmosphere-safe ellipse or restoring an invented velocity.
+                Vector3d remaining = OrbitalManeuverCalculator.DeltaVToCircularize(v.orbit, Now);
+                double measuredThrust = v.parts.SelectMany(part => part.FindModulesImplementing<ModuleEngines>()).Sum(e => e.maxThrust * e.thrustPercentage / 100);
+                double halfRemainingBurn = RailLaunch.EstimateHalfBurn(remaining.magnitude,v.GetTotalMass(),measuredThrust);
+                double resumedNodeUt = Now + halfRemainingBurn;
+                // A finite burn needs an impulse centred ahead of the current
+                // time. An instantaneous node at Now left a measured 4 km apsis
+                // error on the earlier 422 m/s resume despite finishing its node.
+                remaining = OrbitalManeuverCalculator.DeltaVToCircularize(v.orbit,resumedNodeUt);
+                if (!FlightRules.Finite(remaining.magnitude) || remaining.magnitude > RailLaunch.MaximumCircularizationDeltaV ||
+                    remaining.magnitude > p.CircularizationDeltaV) {
+                    LaunchFailure(p, core, "Resumed circularization exceeds the original launch budget"); return;
+                }
+                double previousNodeUt = v.patchedConicSolver.maneuverNodes[0].UT;
+                v.patchedConicSolver.maneuverNodes[0].RemoveSelf();
+                v.PlaceManeuverNode(v.orbit, remaining, resumedNodeUt);
+                File.AppendAllText(Path.Combine(folder, "CircularizationResume.tsv"),
+                    FormattableString.Invariant($"{Now:R}\t{p.Number}\t{previousNodeUt:R}\t{remaining.magnitude:R}\t{v.orbit.PeA:R}\t{v.orbit.ApA:R}\t{resumedNodeUt:R}\t{halfRemainingBurn:R}\t{measuredThrust:R}\t{v.GetTotalMass():R}\n"));
                 foreach (var engine in v.parts.SelectMany(part => part.FindModulesImplementing<ModuleEngines>())) engine.Activate();
+                core.node.autowarp = false;
                 core.node.ExecuteOneNode(this);
             }
             if (!p.CircularizationStarted) {
                 ShutdownLaunchPropulsion(v, core);
-                core.attitude.attitudeTo(v.obt_velocity.normalized, AttitudeReference.INERTIAL, this);
+                // Once the actual circularization node exists, spend the
+                // unpowered coast aligning to that node rather than waiting
+                // for the short burn window to begin the native turn.
+                bool plannedNode=p.CircularizationPlanned&&v.patchedConicSolver.maneuverNodes.Count==1;
+                core.attitude.attitudeTo(plannedNode?Vector3d.forward:v.obt_velocity.normalized,
+                    plannedNode?AttitudeReference.MANEUVER_NODE_COT:AttitudeReference.INERTIAL,this);
             }
             p.Detail = FormattableString.Invariant($"Rail-only coast / engines OFF / Ap {v.orbit.ApA / 1000:F1} km / Pe {v.orbit.PeA / 1000:F1} km");
             if (!p.CircularizationPlanned) {
@@ -818,7 +917,7 @@ namespace RailgunSandbox
             }
             if (p.CircularizationStarted) {
                 p.Detail = FormattableString.Invariant($"Native apoapsis circularization / planned {p.CircularizationDeltaV:F1} m/s / burnTriggered={core.node.burnTriggered}");
-                if (!core.node.enabled && FlightRules.SafeOrbit(v.orbit.PeA, v.orbit.eccentricity, home.atmosphereDepth)) {
+                if (FlightRules.CircularizationComplete(core.node.enabled, v.patchedConicSolver.maneuverNodes.Count, v.orbit.PeA, v.orbit.eccentricity, home.atmosphereDepth)) {
                     core.thrust.ThrustOff(); Change(p, FlightPhase.Rendezvous); PersistGame();
                 } else if (!core.node.enabled && v.orbit.timeToAp > 60) LaunchFailure(p, core, "Native circularization ended without a safe periapsis");
             }
@@ -1021,7 +1120,7 @@ namespace RailgunSandbox
                 var pod = state.Pods[0]; var vessel = StockPods.Vessel(pod);
                 if (!ReentryTestSave || !pod.RecoveryTest || pod.Phase != FlightPhase.Landing || vessel == null || !vessel.loaded)
                     throw new InvalidOperationException("The compatibility A/B command is restricted to the isolated active recovery test.");
-                ApplyLandingEngineCompatibility(pod, vessel); PersistGame(); return;
+                ApplyGuidanceEngineCompatibility(pod, vessel); PersistGame(); return;
             }
             if (command == "reentry-test1") {
                 var pod = state.Pods[0]; var vessel = StockPods.Vessel(pod);
@@ -1198,10 +1297,12 @@ namespace RailgunSandbox
             lines.AppendLine("Active=" + FlightGlobals.ActiveVessel?.vesselName);
             if(state==null) {
                 lines.AppendLine("FleetUnavailable=True");lines.AppendLine("Connection="+(network?.Status??detail));
-                File.WriteAllText(Path.Combine(folder,"RailgunSandbox.status.txt"),lines.ToString());return;
+                AtomicStatusFile.TryWrite(Path.Combine(folder,"RailgunSandbox.status.txt"),lines.ToString());return;
             }
             if(showcasePivot!=null&&showcaseReference!=null)lines.AppendLine($"InspectionCamera: depotActive={model.Root.activeSelf} targetIndependent={!showcasePivot.transform.IsChildOf(model.Root.transform)} cameraActive={FlightCamera.fetch.mainCamera.gameObject.activeInHierarchy}");
-            lines.AppendLine($"Menu: collapsed={menuCollapsed} selectedPod={selectedPod} resource={resource} quantity={quantity} compact={compactMenuPreview}");
+            lines.AppendLine($"Menu: visible={menuVisible} collapsed={menuCollapsed} selectedPod={selectedPod} resource={resource} quantity={quantity} compact={compactMenuPreview}");
+            lines.AppendLine("Return profile: " + RecoveryGuidance.ActiveProfile);
+            lines.AppendLine("Luna docking adapter: active=" + LunaDockingCompatibility.Active);
             lines.AppendLine($"Selection: anchor={state.SelectedReceiverAnchor} port={state.SelectedReceiverPort}");
             var selectedReceiver = SelectedReceiver();
             if (selectedReceiver != null && selectedReceiver.loaded) foreach (var port in selectedReceiver.parts.SelectMany(part => part.FindModulesImplementing<ModuleDockingNode>())) {
@@ -1279,11 +1380,11 @@ namespace RailgunSandbox
                     }
                 }
             }
-            File.WriteAllText(Path.Combine(folder, "RailgunSandbox.status.txt"), lines.ToString());
+            AtomicStatusFile.TryWrite(Path.Combine(folder, "RailgunSandbox.status.txt"), lines.ToString());
         }
         void OnGUI()
         {
-            if (!enabledHere || state == null || showcase) return;
+            if (!enabledHere || state == null || showcase || !menuVisible) { InputLockManager.RemoveControlLock(LockName); return; }
             if (FlightDriver.Pause) { InputLockManager.RemoveControlLock(LockName); return; }
             GUI.skin = HighLogic.Skin;
             if (menu == null) menu = new AeroMenu();
@@ -1344,9 +1445,12 @@ namespace RailgunSandbox
             GUILayout.BeginVertical(); GUILayout.Label("Railgun Logistics", menu.Title);
             GUILayout.Label(network == null ? "Deliver. Return. Reuse." : "Shared Luna depot · Deliver. Return. Reuse.", menu.White); GUILayout.EndVertical();
             if (GUILayout.Button(menuCollapsed ? "+" : "−", menu.Quiet, GUILayout.Width(30), GUILayout.Height(28))) { menuCollapsed = !menuCollapsed; GUI.FocusControl(null); }
+            if (GUILayout.Button("×", menu.Quiet, GUILayout.Width(30), GUILayout.Height(28))) {
+                HideMenu(); RailgunLogistics.Logistics.Instance?.Close(); GUI.FocusControl(null);
+            }
             GUILayout.EndHorizontal();
-            GUI.DragWindow(new Rect(0, 0, 460, 78));
-            if (menuCollapsed) return;
+            GUI.DragWindow(new Rect(0, 0, 430, 78));
+            if (menuCollapsed || !menuVisible) return;
             GUILayout.Space(9);
             GUILayout.BeginHorizontal();
             if(GUILayout.Button(CoastWarpClient.Enabled?"Auto warp: On":"Auto warp: Off",menu.Button,GUILayout.Width(142),GUILayout.Height(29)))Run(()=>CoastWarpClient.SetEnabled(!CoastWarpClient.Enabled));
@@ -1466,6 +1570,7 @@ namespace RailgunSandbox
             if (network != null) network.FollowFlight = follow;
             // Luna synchronization and unacknowledged commits survive native scene switches.
             RecoveryGuidance.RemoveOwner(this);
+            RendezvousSafety.RemoveOwner(this);
             if (showcase && KSP.UI.UIMasterController.Instance != null) { KSP.UI.UIMasterController.Instance.ShowUI(); GameEvents.onShowUI.Fire(); }
             ReleaseInspectionTarget();if(showcasePivot!=null)UnityEngine.Object.Destroy(showcasePivot);
             model?.Dispose(); InputLockManager.RemoveControlLock(LockName);

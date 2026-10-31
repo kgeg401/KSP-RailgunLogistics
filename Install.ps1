@@ -21,8 +21,15 @@ if ($reusable) {
 }
 if ($ServerPath -and (!(Test-Path -LiteralPath (Join-Path $ServerPath 'Server.dll')) -or !(Test-Path -LiteralPath (Join-Path $ServerPath 'Config\LMPModControl.xml')))) { throw 'Select a valid Luna server folder.' }
 if ($ServerPath -and [Reflection.AssemblyName]::GetAssemblyName((Join-Path $ServerPath 'Server.dll')).Version.ToString() -ne '0.29.2.0') { throw 'This release targets Luna server 0.29.2.' }
-$active = Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq $gameExecutable -or ($ServerPath -and $_.ExecutablePath -eq (Join-Path $ServerPath 'Server.exe')) }
+$active = Get-Process -Name KSP_x64,Server -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $gameExecutable -or ($ServerPath -and $_.Path -eq (Join-Path $ServerPath 'Server.exe')) }
 if ($active) { throw 'Close this KSP instance and its Luna server before installation. No processes were stopped.' }
+# Compute the payload hash before changing either installation. This uses the
+# framework directly, including when a child Windows PowerShell cannot autoload
+# the optional Utility module that exposes Get-FileHash.
+$hashStream=[IO.File]::OpenRead((Join-Path $packageRoot 'GameData\RailgunLogistics\Plugins\RailgunLogistics.dll'))
+$hasher=[Security.Cryptography.SHA256]::Create()
+try { $payloadHash=[BitConverter]::ToString($hasher.ComputeHash($hashStream)).Replace('-','') }
+finally { $hashStream.Dispose(); $hasher.Dispose() }
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
 $backupRoot = Join-Path $KspPath "RailgunLogistics-Backups\$stamp"
 New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
@@ -46,7 +53,10 @@ if ($ServerPath) {
     [xml]$control = Get-Content -LiteralPath $controlPath -Raw
     $root = $control.DocumentElement
     $parts=@('kgeg4KerbinRailgun','kgeg4RailgunCargoPod')
-    if ($reusable) { $parts+=@('krlReusableProbe','krlReusableFuelCargo','krlReusableMonoCargo') }
+    if ($reusable) {
+        $parts+=@('krlReusableProbe','krlReusableFuelCargo','krlReusableMonoCargo')
+        if ((Get-Content -LiteralPath (Join-Path $packageRoot 'GameData\RailgunLogistics\Parts\ReusableParts.cfg') -Raw) -match '(?m)^\s*@?name\s*=\s*krlLaunchShell\s*$') { $parts+='krlLaunchShell' }
+    }
     foreach($partName in $parts) {
         if (!$root.AllowedParts.SelectSingleNode("string[text()='$partName']")) {
             $part = $control.CreateElement('string'); $part.InnerText = $partName; $root.AllowedParts.AppendChild($part) | Out-Null
@@ -58,7 +68,7 @@ if ($ServerPath) {
     if($mandatoryEntries.Count -gt 1) { throw 'Duplicate mandatory Railgun Logistics entries need review; no server configuration was saved.' }
     $entry = $mandatoryEntries | Select-Object -First 1
     if (!$entry) { $entry=$control.CreateElement('DllFile'); $mandatory.AppendChild($entry) | Out-Null }
-    $hash = (Get-FileHash -LiteralPath (Join-Path $clientTarget 'Plugins\RailgunLogistics.dll') -Algorithm SHA256).Hash
+    $hash = $payloadHash
     $dashedHash = ($hash -split '(.{2})' | Where-Object { $_ }) -join '-'
     $gameplayVersion=[Reflection.AssemblyName]::GetAssemblyName((Join-Path $clientTarget 'Plugins\RailgunLogistics.dll')).Version.ToString(3)
     $description=if($reusable){"Railgun Logistics $gameplayVersion shared reusable pods - finish the matching client update before joining."}else{'Railgun Logistics physical docking pods - install the same client package before joining.'}

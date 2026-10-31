@@ -72,8 +72,30 @@ namespace RailgunLogisticsServer
             var podId = PodVessel(expected.VesselId);
             if (podId != Guid.Empty && VesselStoreSystem.CurrentVessels.TryGetValue(podId, out var native)) {
                 var parts = native.Parts.GetAllValues().ToList();
+                string savedForRefit = null;
                 facts.PodSnapshotVerified = expected.PartIds.Count > 0 && expected.PartIds.All(id => parts.Any(p => Field(p, "uid") == id.ToString(CultureInfo.InvariantCulture))) &&
                     parts.Any(p => Module(p, "RailgunFlightPod", "fleetId") == expected.VesselId);
+                var shell = parts.FirstOrDefault(p => Field(p, "uid") == proposed.LaunchShellPartId.ToString(CultureInfo.InvariantCulture));
+                facts.LaunchShellVerified = proposed.LaunchShellRequired && proposed.LaunchShellPartId != 0 &&
+                    (shell != null && Field(shell, "name") == "krlLaunchShell" || shell == null &&
+                    proposed.LaunchShellOpenedAt >= 0 && proposed.LaunchShellPanelsReleased && proposed.LaunchShellBaseReleased);
+                facts.LaunchShellClosedVerified = facts.LaunchShellVerified && shell != null &&
+                    Module(shell, "ModuleProceduralFairing", "fsm") == "st_idle" &&
+                    True(Module(shell, "ModuleProceduralFairing", "isCapped")) &&
+                    string.Equals(Module(shell, "ModuleDecouple", "isDecoupled"), "False", StringComparison.OrdinalIgnoreCase) &&
+                    parts.Count == proposed.OriginalParts + 1 && facts.PodSnapshotVerified;
+                if (facts.LaunchShellClosedVerified && slot?.Pod.Phase == FlightPhase.Refitting &&
+                    (slot.Pod.LaunchShellPartId != proposed.LaunchShellPartId || proposed.Phase == FlightPhase.Ready)) {
+                    VesselStoreSystem.BackupVessels();
+                    string savedPath = Path.Combine(VesselStoreSystem.VesselsPath, podId + VesselStoreSystem.VesselFileFormat);
+                    if (!File.Exists(savedPath)) facts.LaunchShellClosedVerified = false;
+                    else {
+                        string saved = File.ReadAllText(savedPath);
+                        savedForRefit = saved;
+                        facts.LaunchShellClosedVerified = ShellSnapshotEvidence.ExactAssembly(saved, proposed.PartIds, proposed.LaunchShellPartId);
+                    }
+                }
+                if (proposed.LaunchShellRequired && !facts.LaunchShellVerified) facts.PodSnapshotVerified = false;
                 if (slot?.Pod.Created == true && !facts.PodSnapshotVerified) {
                     if (!missingSince.ContainsKey(proposed.VesselId)) missingSince[proposed.VesselId] = now;
                     facts.PodMissingConfirmed = now - missingSince[proposed.VesselId] >= 20;
@@ -96,6 +118,16 @@ namespace RailgunLogisticsServer
                     (Module(target, "ModuleDockingNode", "state") ?? "").StartsWith("Docked", StringComparison.Ordinal) &&
                     Module(own, "ModuleDockingNode", "dockUId") == proposed.TargetPort.ToString() && Module(target, "ModuleDockingNode", "dockUId") == proposed.OwnPort.ToString();
                 var marker = parts.First(p => Module(p, "RailgunFlightPod", "fleetId") == proposed.VesselId);
+                if (slot.Pod.Phase == FlightPhase.Refitting && proposed.Phase == FlightPhase.Ready &&
+                    facts.LaunchShellClosedVerified && savedForRefit != null)
+                    facts.RefitSuppliesDurable = RefitSupplyEvidence.CurrentReady(native, expected.PartIds, expected.CargoPart, expected.VesselId, expected.OrderId) &&
+                        RefitSupplyEvidence.SavedReady(savedForRefit, expected.PartIds, expected.CargoPart, expected.VesselId, expected.OrderId);
+                double clearance=Number(Module(marker,"RailgunFlightPod","departurePortClearance"));
+                facts.DepartureCleared=slot.Pod.CargoTransferred&&facts.PodSnapshotVerified&&!facts.Docked&&
+                    !parts.Any(p=>Field(p,"uid")==proposed.TargetAnchor.ToString())&&
+                    Module(marker,"RailgunFlightPod","completedOrder")==proposed.OrderId&&
+                    Module(marker,"RailgunFlightPod","departureOrder")==proposed.OrderId&&
+                    FlightRules.Finite(clearance)&&clearance>=50;
                 facts.PlacementSettled = True(Module(marker, "RailgunFlightPod", "placementSettled"));
                 if (Module(marker, "RailgunFlightPod", "completedOrder") == proposed.OrderId && !string.IsNullOrEmpty(proposed.OrderId) && facts.Docked) {
                     VesselStoreSystem.BackupVessels();

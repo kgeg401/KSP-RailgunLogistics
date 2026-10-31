@@ -35,6 +35,17 @@ namespace RailgunSandbox
                 (MuzzleSpeed - speed) / dt));
         }
 
+        public static double EstimateHalfBurn(double deltaV, double wetMass, double thrust)
+        {
+            if (!FlightRules.Finite(deltaV) || deltaV < 0 || !FlightRules.Finite(wetMass) || wetMass <= 0 ||
+                !FlightRules.Finite(thrust) || thrust <= 0)
+                throw new InvalidOperationException("Finite burn timing requires actual valid propulsion measurements.");
+            double half = deltaV * wetMass / thrust / 2;
+            if (!FlightRules.Finite(half) || half > 60)
+                throw new InvalidOperationException("Resumed circularization exceeds the bounded native burn window.");
+            return half;
+        }
+
         public static bool BurnWindow(double altitude, double atmosphere, double timeToAp, double halfBurnTime) =>
             FlightRules.Finite(altitude) && FlightRules.Finite(atmosphere) && FlightRules.Finite(timeToAp) &&
             FlightRules.Finite(halfBurnTime) && halfBurnTime >= 0 && altitude > atmosphere + 1000 &&

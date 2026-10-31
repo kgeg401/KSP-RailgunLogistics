@@ -68,6 +68,8 @@ namespace RailgunSandbox
         public SharedFleet Fleet;
         public string LoadingOrder = "";
         public double LoadingSeconds = -1, LoadingSampleUt = -1;
+        public int LoadingShellStage = -1;
+        public double LoadingShellGrip;
     }
     // Ephemeral presentation only: never changes fleet revisions, launch gates,
     // leases, physics or durable state. Late samples simply expire.
@@ -80,6 +82,8 @@ namespace RailgunSandbox
                 slot.Pod.Phase==FlightPhase.Reserved&&sample.LoadingOrder==slot.Pod.OrderId&&slot.Pod.OrderId!=""&&
                 slot.Pilot==player&&slot.Lease!=""&&sample.Lease==slot.Lease&&slot.LeaseUntil>now&&
                 facts!=null&&facts.OwnsPodUpdate&&facts.Subspace==state.Subspace&&
+                (slot.Pod.LaunchShellRequired ? sample.LoadingShellStage>=0&&sample.LoadingShellStage<=5&&
+                    FlightRules.Finite(sample.LoadingShellGrip)&&sample.LoadingShellGrip>=0&&sample.LoadingShellGrip<=1 : sample.LoadingShellStage==-1)&&
                 FlightRules.Finite(sample.LoadingSeconds)&&sample.LoadingSeconds>=-1&&sample.LoadingSeconds<=30&&
                 FlightRules.Finite(sample.LoadingSampleUt)&&FlightRules.Finite(facts.GameTime)&&
                 sample.LoadingSampleUt>=slot.Pod.PhaseStarted&&Math.Abs(sample.LoadingSampleUt-facts.GameTime)<=2&&
@@ -91,8 +95,9 @@ namespace RailgunSandbox
     public sealed class FleetFacts
     {
         public int Subspace = int.MinValue;
-        public bool ReceiverOwned, ReceiverReady, PodSnapshotVerified, PodOnPad, Docked, ReceiptDurable, LandedAtDepot, PodMissingConfirmed;
+        public bool ReceiverOwned, ReceiverReady, PodSnapshotVerified, PodOnPad, Docked, ReceiptDurable, LandedAtDepot, PodMissingConfirmed, DepartureCleared;
         public bool OwnsPodUpdate, PlacementSettled;
+        public bool LaunchShellVerified, LaunchShellClosedVerified, RefitSuppliesDurable;
         public bool AbandonedTimeline, ForwardTimeline, OtherFlightPilotsAligned;
         public double GameTime;
     }
@@ -188,9 +193,12 @@ namespace RailgunSandbox
                     throw new InvalidOperationException("Wait for the receiving ship, parked pod and their native snapshots to synchronize.");
                 var proposed = request.Pod ?? throw new InvalidOperationException("Missing delivery manifest.");
                 SameIdentity(old, proposed);
+                if (proposed.LaunchShellRequired != old.LaunchShellRequired || proposed.LaunchShellPartId != old.LaunchShellPartId ||
+                    proposed.RailOnlyAscent != old.LaunchShellRequired || proposed.RailOnlyAscent && (!facts.LaunchShellVerified || !facts.LaunchShellClosedVerified))
+                    throw new InvalidOperationException("Rail-only launch requires the server-verified physical shell.");
                 var view = new FleetState { Pods = next.Slots.Select(s => s.Pod).ToList() };
                 FlightRules.Reserve(view, old, proposed.TargetAnchor, proposed.TargetPort, proposed.TargetName, proposed.Resource,
-                    proposed.CargoUnits, factsResourceCapacity(proposed.Resource), proposed.PhaseStarted);
+                    proposed.CargoUnits, factsResourceCapacity(proposed.Resource), proposed.PhaseStarted, proposed.RailOnlyAscent);
                 DockingPortPolicy.ValidateToken(proposed.DockingType);
                 if (string.IsNullOrWhiteSpace(proposed.DockingHardwareConfig) || proposed.DockingHardwareConfig.Length > 32768)
                     throw new InvalidOperationException("Missing or oversized connector fitting.");
@@ -219,8 +227,8 @@ namespace RailgunSandbox
             slot.LastRequest = request.Request; slot.LastDigest = digest; slot.LastPlayer = player;
             bool returned = request.Kind == "Commit" && old.Phase == FlightPhase.Refitting && slot.Pod.Phase == FlightPhase.Ready;
             bool parked = request.Kind == "Heartbeat" && slot.Pod.Created && slot.Pod.Phase == FlightPhase.Ready && facts.PlacementSettled && facts.PodOnPad;
-            bool undocked = request.Kind == "Commit" && old.Phase == FlightPhase.Undocking && slot.Pod.Phase == FlightPhase.Returning;
-            if (returned || parked || undocked || slot.Pod.Phase == FlightPhase.Lost) { slot.Pilot = slot.Lease = ""; slot.LeaseUntil = 0; }
+            bool departed = request.Kind == "Commit" && old.Phase == FlightPhase.Returning && slot.Pod.Phase == FlightPhase.Landing;
+            if (returned || parked || departed || slot.Pod.Phase == FlightPhase.Lost) { slot.Pilot = slot.Lease = ""; slot.LeaseUntil = 0; }
             if (returned || slot.Pod.Phase == FlightPhase.Lost) slot.Dispatcher = "";
             next.Validate();
             // Commit storage before exposing or acknowledging a new revision. A failed
@@ -240,8 +248,32 @@ namespace RailgunSandbox
             SameIdentity(old, next);
             if (!FlightRules.Finite(next.PhaseStarted) || next.PhaseStarted < old.PhaseStarted || (next.Detail?.Length ?? 0) > 512)
                 throw new InvalidOperationException("Invalid flight clock or status.");
-            if (next.RecoveryTest || next.RailOnlyAscent || next.Phase == FlightPhase.RecoveryTestComplete)
+            if (next.RecoveryTest || next.Phase == FlightPhase.RecoveryTestComplete)
                 throw new InvalidOperationException("Private launch/recovery fixtures are not multiplayer gameplay.");
+            if (next.RailOnlyAscent && (!next.LaunchShellRequired || !facts.LaunchShellVerified))
+                throw new InvalidOperationException("Rail-only launch requires the server-verified physical shell.");
+            bool shellRearm = old.Created && old.Phase == FlightPhase.Refitting &&
+                (next.Phase == FlightPhase.Refitting || next.Phase == FlightPhase.Ready) &&
+                old.LaunchShellRequired && next.LaunchShellRequired && old.RailOnlyAscent && next.RailOnlyAscent &&
+                old.LaunchShellOpenedAt >= 0 && old.LaunchShellPanelsReleased && old.LaunchShellBaseReleased && old.LaunchShellClearAt >= old.LaunchShellOpenedAt &&
+                next.LaunchShellPartId != old.LaunchShellPartId && FlightRules.ClosedShellRecord(next) &&
+                facts.LandedAtDepot && facts.LaunchShellClosedVerified && facts.PodSnapshotVerified;
+            bool legacyUpgrade = old.Created && old.Phase == FlightPhase.Refitting && next.Phase == FlightPhase.Refitting &&
+                !old.LaunchShellRequired && !old.RailOnlyAscent && old.LaunchShellPartId == 0 &&
+                old.LaunchShellOpenedAt == -1 && old.LaunchShellClearAt == -1 && !old.LaunchShellPanelsReleased && !old.LaunchShellBaseReleased &&
+                next.LaunchShellRequired && next.RailOnlyAscent && FlightRules.ClosedShellRecord(next) &&
+                facts.LandedAtDepot && facts.LaunchShellClosedVerified && facts.PodSnapshotVerified;
+            if (old.Created && !shellRearm && !legacyUpgrade && (old.LaunchShellRequired != next.LaunchShellRequired || old.LaunchShellPartId != next.LaunchShellPartId ||
+                old.RailOnlyAscent != next.RailOnlyAscent || old.LaunchShellPanelsReleased && !next.LaunchShellPanelsReleased ||
+                old.LaunchShellBaseReleased && !next.LaunchShellBaseReleased ||
+                old.LaunchShellOpenedAt >= 0 && old.LaunchShellOpenedAt != next.LaunchShellOpenedAt ||
+                old.LaunchShellClearAt >= 0 && old.LaunchShellClearAt != next.LaunchShellClearAt))
+                throw new InvalidOperationException("A flight cannot replace its shell, launch mode or separation history.");
+            if (next.LaunchShellRequired && next.Phase == FlightPhase.Ready &&
+                (!FlightRules.ClosedShellRecord(next) || !facts.LaunchShellClosedVerified))
+                throw new InvalidOperationException("Ready requires a server-verified new closed protective shell.");
+            if (old.Phase == FlightPhase.Refitting && next.Phase == FlightPhase.Ready && !facts.RefitSuppliesDurable)
+                throw new InvalidOperationException("Waiting for the refuelled native pod and empty cargo tanks to finish saving.");
             if (old.Phase == FlightPhase.Lost || old.Phase == FlightPhase.Stranded) {
                 if (FleetWire.Digest(old) != FleetWire.Digest(next)) throw new InvalidOperationException("Unavailable pods cannot be reset.");
             }
@@ -266,6 +298,8 @@ namespace RailgunSandbox
                 if (next.LaunchedAt != check.LaunchedAt) throw new InvalidOperationException("Launch time must follow the native launch transition.");
                 if (next.Phase == FlightPhase.Unloading && !facts.Docked) throw new InvalidOperationException("Unloading requires the assigned physical dock.");
                 if (next.Phase == FlightPhase.Returning && facts.Docked) throw new InvalidOperationException("Return requires the native docking joint to separate first.");
+                if (old.Phase == FlightPhase.Returning && next.Phase == FlightPhase.Landing && !facts.DepartureCleared)
+                    throw new InvalidOperationException("Return handoff requires native receiving-port clearance before landing guidance.");
                 if ((next.Phase == FlightPhase.Refitting || next.Phase == FlightPhase.Ready) && !facts.LandedAtDepot)
                     throw new InvalidOperationException("Return and reuse require an intact native landing at the depot.");
                 if (next.Phase == FlightPhase.Lost && !facts.PodMissingConfirmed) throw new InvalidOperationException("A transient sync gap is not a destroyed pod.");

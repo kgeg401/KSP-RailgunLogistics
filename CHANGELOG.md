@@ -1,3 +1,14 @@
+# 0.3.7 alpha — ordinary multiplayer integration and dismissible menu
+
+- Promote the accepted native return profile to ordinary registered logistics flights; preserve explicit engineering configurations for diagnostics.
+- Activate the version-checked, exact-port-pair Luna docking adapter without a test launch switch.
+- Use one bounded safe-intercept recovery per authenticated order while keeping orbit, burn and home-fuel limits.
+- Require current and persisted propulsion refill, empty locked cargo and the original receipt before Ready acknowledgement.
+- Attach a first physical shell to older surviving pods only during depot refit; retain original structure, orders and unavailable fleet history.
+- Add a full close control, default-hidden menu, synchronized toolbar and input-lock release.
+- Native publication validation and exact package hashes are recorded with the release; component checks do not imply repeated full-route reliability.
+- Complete one ordinary-configuration two-client launch/delivery/return/persisted-refit check: 100 units conserved, all 29 originals, 2.93 m touchdown and a new closed shell. Verify older-pod construction and full menu dismissal separately. See the 0.3.7 validation report for fuel and evidence-profile limitations.
+
 # 0.3.6 preview bundle - automatic shared coast warp
 
 - Add a per-client Auto warp toggle, off by default, with safe native orbital coasts capped at 100×.

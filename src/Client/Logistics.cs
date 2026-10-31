@@ -56,9 +56,21 @@ namespace RailgunLogistics
         string Player=>Connected?SettingsSystem.CurrentSettings.PlayerName:"Commander";
         public void Open()
         {
+            button?.SetTrue(false);
             if(RailgunSandbox.SandboxFlight.Instance!=null) { RailgunSandbox.SandboxFlight.Instance.OpenMenu(); visible=false; return; }
             if(HighLogic.SaveFolder=="LunaMultiplayer") { ScreenMessages.PostScreenMessage("Enter flight and wait for the shared two-pod depot to synchronize.",6,ScreenMessageStyle.UPPER_CENTER); return; }
             visible=true;
+        }
+        public void Close()
+        {
+            visible=false;
+            RailgunSandbox.SandboxFlight.Instance?.HideMenu();
+            button?.SetFalse(false);
+            InputLockManager.RemoveControlLock(InputLock);
+        }
+        public void SetMenuIndicator(bool open)
+        {
+            if(open)button?.SetTrue(false);else button?.SetFalse(false);
         }
         void Awake()
         {
@@ -77,7 +89,7 @@ namespace RailgunLogistics
                 pixels[y*38+x]=(x>=10&&x<=13 || x>=25&&x<=28) && y>4 && y<33?new Color(.25f,.8f,1):new Color(.03f,.08f,.13f,1);
             for(int y=13;y<27;y++)for(int x=17;x<22;x++)pixels[y*38+x]=Color.white;
             icon.SetPixels(pixels);icon.Apply();
-            button=ApplicationLauncher.Instance.AddModApplication(Open,()=>visible=false,null,null,null,null,
+            button=ApplicationLauncher.Instance.AddModApplication(Open,Close,null,null,null,null,
                 ApplicationLauncher.AppScenes.FLIGHT|ApplicationLauncher.AppScenes.SPACECENTER|ApplicationLauncher.AppScenes.TRACKSTATION,icon);
         }
         void OnDestroy()
@@ -301,7 +313,7 @@ namespace RailgunLogistics
         void Draw(int id)
         {
             GUILayout.BeginHorizontal();GUILayout.Label(Connected?"SHARED LUNA DEPOT":"KERBIN LOGISTICS DEPOT");
-            if(GUILayout.Button("Close",GUILayout.Width(65)))visible=false;GUILayout.EndHorizontal();
+            if(GUILayout.Button("Close",GUILayout.Width(65)))Close();GUILayout.EndHorizontal();
             GUILayout.Label("Physical cargo pod • assisted approach • stock docking before unloading");
             if(Multiplayer && !Connected)GUILayout.Label("Connect to your Luna server to use its logistics depot.");
             else if(!serviceReady)GUILayout.Label("Waiting for logistics service… server plugin must be installed.");

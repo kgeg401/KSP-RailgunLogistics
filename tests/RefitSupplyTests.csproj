@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net8.0</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Server"><HintPath>$(LunaRoot)/Server.dll</HintPath></Reference>
+    <Reference Include="LunaConfigNode"><HintPath>$(LunaRoot)/LunaConfigNode.dll</HintPath></Reference>
+    <Compile Include="../src/Server/RefitSupplyPolicy.cs" Link="RefitSupplyPolicy.cs"/>
+    <Compile Include="../src/Server/RefitSupplyEvidence.cs" Link="RefitSupplyEvidence.cs"/>
+    <Compile Include="RefitSupplyTests.cs"/>
+  </ItemGroup>
+</Project>
