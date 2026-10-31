@@ -1,9 +1,8 @@
-<?xml version='1.0' encoding='utf-8'?>
-<Release Version="0.3.6" KspBuild="3190" LunaVersion="0.29.2.0" ReusableFleet="true" PackageUrl="https://github.com/kgeg401/KSP-RailgunLogistics/releases/download/v0.3.6-preview/RailgunLogistics-Update-0.3.6.zip" Sha256="cce528e6f8d93ded146fecd09d7ace482cdaa2c33a2deafba66d18ad05ce7932">
+<Release Sha256="1b01cfc5ed8c27acdf4f6f339eb37142913e17abf77c3ef4cc9aabf1eb2fb639" PackageUrl="https://github.com/kgeg401/KSP-RailgunLogistics/releases/download/v0.3.7/RailgunLogistics-Update-0.3.7.zip" LunaVersion="0.29.2.0" KspBuild="3190" Version="0.3.7" ReusableFleet="true">
   <File Path="Parts/CargoPod.cfg" Sha256="bcec90ff975cad2cda6580a287874e9015da9fcf021c3f145bc926c7b8055d58" />
   <File Path="Parts/KerbinRailgun.cfg" Sha256="5af667dd76d1973e4261b996396235ac2147967622234540fb005b470e9bb3e9" />
   <File Path="Parts/ReusableParts.cfg" Sha256="f2d84bcf7e2481550b36a5921d1458de4b31630f71f95450b3cc15d87f579b48" />
-  <File Path="Plugins/RailgunLogistics.dll" Sha256="5f410d147679f147f63e5080a87f1123890f76252b49d81f5624c07afd5a07a8" />
+  <File Path="Plugins/RailgunLogistics.dll" Sha256="08398fb743b2a0355298983123ec1957b28af65ddb07b02d8a89a4077f92b678" />
   <File Path="RailgunLogistics.restockwhitelist" Sha256="d6ab274cfdedb8f65e03bd5c683acbf6e51bf4417c627b1164e0fd149b8fa42d" />
   <File Path="Receiver.cfg" Sha256="d91a72ca175e2a9cd6863038ac10206d2c9fb8df8b49ee3afcc2ccdc3975d6df" />
   <File Path="Updater/ApplyUpdate.exe" Sha256="c8281b3d9b8881a85a85fb81c0b86a3b929790a362ad1119828bb2c64401f04a" />
